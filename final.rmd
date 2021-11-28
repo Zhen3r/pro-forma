@@ -1,0 +1,97 @@
+---
+title: "Predicting rideshare demand in New York City"
+author: "Zhenzhao Xu"
+output:
+  html_document:
+    code_folding: hide
+    toc: yes
+    toc_float: true
+editor_options: 
+  markdown: 
+    wrap: sentence
+  chunk_output_type: inline
+---
+
+```{r}
+knitr::opts_chunk$set(
+	message = FALSE,
+	warning = FALSE,
+	results=FALSE,
+	fig.align="center",
+	cache=T
+)
+```
+
+```{r}
+library(tidyverse)
+library(tidycensus)
+library(sf)
+library(kableExtra)
+library(patchwork)
+library(ggplot2)
+library(viridis)
+library(gridExtra)
+library(knitr)
+
+options(scipen=999)
+options(tigris_class = "sf")
+options(tigris_use_cache = TRUE)
+source("functions.r")
+
+p5 = inferno(5)
+p2 = p5[c(4,2)]
+
+v = mapview::mapview
+
+# NAD83(2011) / San Francisco CS13
+crs = 7131
+```
+
+
+## 1. Introduction
+
+osm amentities
+zoning (offstreet parking)
+weather
+time, space lag
+festivals
+
+Map of Parking Regulations https://data.sfgov.org/Transportation/Map-of-Parking-Regulations/qbyz-te2i
+SFMTA-Enforced Temporary Tow Zones https://data.sfgov.org/Transportation/SFMTA-Enforced-Temporary-Tow-Zones/9dsr-3f97
+
+SFMTA Managed Off-street Parking
+
+```{r}
+mt = read.csv("./data/meter_trans_2021-09.csv")
+mt%>%nrow()
+
+meters = st_read("./data/meters.geojson")
+meters$street_seg_ctrln_id%>%unique()%>%length()
+30 * 24 * 2 * 2200
+meters%>%nrow()
+v(meters,z="street_seg_ctrln_id")
+
+meters%>%head(50)%>%view()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
