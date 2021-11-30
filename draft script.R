@@ -21,32 +21,27 @@ source("functions.r")
 
 p5 = inferno(5)
 p2 = p5[c(4,2)]
-
+crs = 7131
 v = mapview::mapview
 
-setwd("/Users/inordia/Desktop/UPenn搞起来/592/pro-forma")
-
-mt = read.csv("/Users/inordia/Desktop/UPenn搞起来/592/pro-forma/data/meter_trans_2021-09.csv")
+mt = read.csv("data/meter_trans_2021-09.csv")
 mt%>%nrow()
 
-meters = st_read("/Users/inordia/Desktop/UPenn搞起来/592/pro-forma/data/Parking Meters.geojson")
+meters = st_read("data/Parking Meters.geojson")
 
-meters <-
-  meters%>%
+meters = meters%>%
   select(post_id, ms_space_num, on_offstreet_type, active_meter_flag, meter_type,
          street_id, street_seg_ctrln_id, longitude, latitude, geometry)%>%
-  st_transform('EPSG:7131')
-
-meters$street_seg_ctrln_id<-as.numeric(meters$street_seg_ctrln_id)
-round(meters$street_seg_ctrln_id)
-meters$street_seg_ctrln_id<-as.character(meters$street_seg_ctrln_id)
-meters$ms_space_num<-as.numeric(meters$ms_space_num)
-round(meters$ms_space_num)
-meters$ms_space_num[meters$ms_space_num==0]<-1
+  st_transform(crs)%>%
+  mutate(
+    street_seg_ctrln_id = street_seg_ctrln_id%>%as.numeric()%>%as.character(),
+    ms_space_num = as.numeric(ms_space_num),
+    ms_space_num = if_else(ms_space_num==0,1,ms_space_num)
+  )
 
 ## SF Open Data
 
-parking_census <- read.csv("/Users/inordia/Desktop/UPenn搞起来/592/pro-forma/data/On-Street_Parking_Census.csv")%>%
+parking_census <- read.csv("data/On-Street_Parking_Census.csv")%>%
   select(CNN, PRKG_SPLY)
 
 parking_census$CNN <- as.character(parking_census$CNN)
@@ -59,20 +54,20 @@ parking_seg_census <- parking_seg_census%>%
   left_join(parking_census, by = c("street_seg_ctrln_id"="CNN"))
 
 
-transit <- st_read("/Users/inordia/Desktop/UPenn搞起来/592/pro-forma/data/Muni Stops.geojson")%>%
-  st_transform('EPSG:7131')
+transit <- st_read("data/Muni Stops.geojson")%>%
+  st_transform(crs)
 
-park_public <- st_read("/Users/inordia/Desktop/UPenn搞起来/592/pro-forma/data/Recreation and Parks Properties.geojson")%>%
-  st_transform('EPSG:7131')%>%
+park_public <- st_read("data/Recreation and Parks Properties.geojson")%>%
+  st_transform(crs)%>%
   select(propertytype, geometry)%>%
   rename(type=propertytype)
 
-park_private <- st_read("/Users/inordia/Desktop/UPenn搞起来/592/pro-forma/data/Privately Owned Public Open Spaces.geojson")%>%
-  st_transform('EPSG:7131')%>%
+park_private <- st_read("data/Privately Owned Public Open Spaces.geojson")%>%
+  st_transform(crs)%>%
   select(type, geometry)
 
-cultural_district <- st_read("/Users/inordia/Desktop/UPenn搞起来/592/pro-forma/data/Cultural Districts.geojson")%>%
-  st_transform('EPSG:7131')
+cultural_district <- st_read("data/Cultural Districts.geojson")%>%
+  st_transform(crs)
 
 parking_seg_census <-
   parking_seg_census %>%
@@ -86,12 +81,13 @@ parking_seg_census <-
 
 ## OSM Data
 
-sf_boundary <- st_read("/Users/inordia/Desktop/UPenn搞起来/592/pro-forma/data/Bay Area Counties.geojson")%>%
+sf_boundary <- st_read("data/Bay Area Counties.geojson")%>%
   filter(county == "San Francisco")%>%
-  st_transform('EPSG:7131')%>%
+  st_transform(crs)%>%
   select(geometry)
 
 q0 <- opq(bbox = c(-122.3505,37.7025,-122.5171,37.8364)) 
+
 restaurant <- add_osm_feature(opq = q0, key = 'amenity', value = "restaurant") %>%
   osmdata_sf(.)
 
@@ -100,7 +96,7 @@ restaurant.sf <- st_geometry(restaurant$osm_points) %>%
   st_sf() %>%
   cbind(., restaurant$osm_points$amenity) %>%
   rename(NAME = restaurant.osm_points.amenity)%>%
-  st_transform('EPSG:7131')%>%
+  st_transform(crs)%>%
   st_intersection(sf_boundary)%>%
   dplyr::select(geometry)%>%
   distinct()

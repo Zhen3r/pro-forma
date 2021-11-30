@@ -62,16 +62,31 @@ SFMTA-Enforced Temporary Tow Zones https://data.sfgov.org/Transportation/SFMTA-E
 SFMTA Managed Off-street Parking
 
 ```{r}
-mt = read.csv("./data/meter_trans_2021-09.csv")
-mt%>%nrow()
+meter_trans = read.csv("./data/meter_trans_2021-09.csv")
+meter_trans%>%nrow()
 
-meters = st_read("./data/meters.geojson")
-meters$street_seg_ctrln_id%>%unique()%>%length()
-30 * 24 * 2 * 2200
-meters%>%nrow()
-v(meters,z="street_seg_ctrln_id")
+meters = st_read("./data/meters.geojson")%>%
+  select(post_id, ms_space_num, on_offstreet_type, active_meter_flag, meter_type,
+         street_id, street_seg_ctrln_id, longitude, latitude, geometry)%>%
+  st_transform(crs)%>%
+  mutate(
+    street_seg_ctrln_id = street_seg_ctrln_id%>%as.numeric()%>%as.character(),
+    ms_space_num = as.numeric(ms_space_num),
+    ms_space_num = if_else(ms_space_num==0,1,ms_space_num)
+  )
 
-meters%>%head(50)%>%view()
+meters%>%filter(street_seg_ctrln_id=="12166000")%>%v()
+
+meters.bySegId = meters%>%st_drop_geometry()%>%
+  group_by(street_seg_ctrln_id,on_offstreet_type)%>%
+  summarise(ms_space_num = n())%>%
+  filter(on_offstreet_type=="ON")
+
+meters.bySegId%>%
+  left_join(parking_seg_census,by="street_seg_ctrln_id")%>%view()
+  ggplot()+
+  geom_point(aes(ms_space_num,PRKG_SPLY))+
+  geom_abline(intercept = 0, slope = 1,color="red")
 ```
 
 
