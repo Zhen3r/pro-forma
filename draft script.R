@@ -55,7 +55,7 @@ parking_seg_census <- parking_seg_census%>%
   left_join(parking_census, by = c("street_seg_ctrln_id"="CNN"))%>%
   drop_na(PRKG_SPLY)
 
-off_parking_census <- read.csv("/Users/inordia/Desktop/UPenn搞起来/592/pro-forma/data/SFMTA_Managed_Off-street_Parking.csv")%>%
+off_parking_census <- read.csv("data/SFMTA_Managed_Off-street_Parking.csv")%>%
   select(STREET_SEG_CTRLN_ID, CAPACITY)
 
 
