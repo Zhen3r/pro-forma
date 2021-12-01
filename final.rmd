@@ -32,6 +32,8 @@ library(ggplot2)
 library(viridis)
 library(gridExtra)
 library(knitr)
+library(lubridate)
+library(riem)
 
 options(scipen=999)
 options(tigris_class = "sf")
@@ -50,16 +52,17 @@ crs = 7131
 
 ## 1. Introduction
 
-osm amentities
-zoning (offstreet parking)
-weather
-time, space lag
-festivals
+Parking fee?
 
-Map of Parking Regulations https://data.sfgov.org/Transportation/Map-of-Parking-Regulations/qbyz-te2i
-SFMTA-Enforced Temporary Tow Zones https://data.sfgov.org/Transportation/SFMTA-Enforced-Temporary-Tow-Zones/9dsr-3f97
+parking Citations
+https://data.sfgov.org/Transportation/SFMTA-Parking-Citations/ab4h-6ztd
 
-SFMTA Managed Off-street Parking
+Parking time limits (from ? to ? / up to ? hours)
+https://data.sfgov.org/Transportation/Parking-regulations-except-non-metered-color-curb-/hi6h-neyh
+
+
+https://www.way.com/parking//37.7879938/-122.4074374/Union-Square/
+
 
 ```{r}
 meter_trans = read.csv("./data/meter_trans_2021-09.csv")
@@ -75,28 +78,57 @@ meters = st_read("./data/meters.geojson")%>%
     ms_space_num = if_else(ms_space_num==0,1,ms_space_num)
   )
 
-meters%>%filter(street_seg_ctrln_id=="12166000")%>%v()
-
 meters.bySegId = meters%>%st_drop_geometry()%>%
-  group_by(street_seg_ctrln_id,on_offstreet_type)%>%
+  group_by(street_seg_ctrln_id)%>%
   summarise(ms_space_num = n())%>%
-  filter(on_offstreet_type=="ON")
+  # filter(on_offstreet_type=="ON")%>%
+  left_join(parking_seg_census,by="street_seg_ctrln_id")
 
 meters.bySegId%>%
-  left_join(parking_seg_census,by="street_seg_ctrln_id")%>%view()
   ggplot()+
   geom_point(aes(ms_space_num,PRKG_SPLY))+
   geom_abline(intercept = 0, slope = 1,color="red")
 ```
 
 
+Weather
 
+```{r}
+weather.SF <- 
+  riem_measures(station = "SFO", date_start = "2021-09-01", date_end = "2021-10-01")
 
+weather.Panel <-  
+  weather.SF %>%
+  mutate_if(is.character, list(~replace(as.character(.), is.na(.), "0"))) %>% 
+  replace(is.na(.), 0) %>%
+  mutate(interval60 = ymd_h(substr(valid, 1, 13))) %>%
+  mutate(week = week(interval60),
+         dotw = wday(interval60, label=TRUE)) %>%
+  group_by(interval60) %>%
+  summarize(Temperature = max(tmpf),
+            Percipitation = sum(p01i),
+            Wind_Speed = max(sknt)) %>%
+  mutate(Temperature = ifelse(Temperature == 0, 42, Temperature))
+```
 
+panel
 
+```{r}
+study.panel =
+  expand.grid(interval60 = unique(weather.Panel$interval60), 
+              start.station.id = unique(parking_seg_census$street_seg_ctrln_id)) 
+nrow(study.panel)
 
+meter_trans = meter_trans%>%mutate(
+  interval60 = floor_date(ymd_hms(session_start_dt), unit = "hour"),
+  parking_time = ymd_hms(session_end_dt)-ymd_hms(session_start_dt)
+)
+meter_trans[1:10000,]%>%view()
 
+```
 
+interval60 = floor_date(ymd_hms(starttime), unit = "hour"),
+         interval15 = floor_date(ymd_hms(starttime), unit = "15 mins"),
 
 
 
