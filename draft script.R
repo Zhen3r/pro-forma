@@ -183,5 +183,49 @@ grid.arrange(top = "Weather Data - San Francisco - Sptember, 2021",
 
 
 
+# add up the time of parking in each hour
+for (row in 1:nrow(meter_trans)) {
+  start.interval = meter_trans[row, "interval60"]
+  start.time = meter_trans[row, "session_start_dt"]
+  duration  = meter_trans[row, "parking_time"]
+  post_id_row = meter_trans[row, "post_id"]
+  row_number = parking.time.panel%>%
+    filter(post_id==post_id_row,
+           interval60==start.interval)%>%
+    pull(index)
+  time.first.hour = as.numeric(ymd_hms(start.interval)+3600-ymd_hms(start.time),
+                               units="secs")
+  duration=duration - time.first.hour
+  parking.time.panel[row_number,"parking_time_in_60m"] = parking.time.panel[row_number,"parking_time_in_60m"] + time.first.hour
+  
+  while(duration>0){
+    row_number=row_number+1
+    time.this.hour = min(duration, 3600)
+    parking.time.panel[row_number,"parking_time_in_60m"] = parking.time.panel[row_number,"parking_time_in_60m"] + time.this.hour
+    duration = duration - time.this.hour
+  }
+}
 
 
+meters.bySegId = meters%>%st_drop_geometry()%>%
+  group_by(street_seg_ctrln_id)%>%
+  summarise(n = n())%>%
+  # filter(on_offstreet_type=="ON")%>%
+  left_join(parking_seg_census,by="street_seg_ctrln_id")%>%
+  mutate(sub = n-PRKG_SPLY)
+
+meters.bySegId%>%
+  filter(abs(sub)<=2)
+
+meters.bySegId%>%
+  ggplot()+
+  geom_histogram(aes(sub),bins=50)
+
+meters.bySegId%>%
+  ggplot()+
+  geom_point(aes(ms_space_num,PRKG_SPLY))+
+  geom_abline(intercept = 0, slope = 1,color="red")
+
+study.panel =
+  expand.grid(interval60 = unique(weather.Panel$interval60), 
+              start.station.id = unique(parking_seg_census$street_seg_ctrln_id)) 

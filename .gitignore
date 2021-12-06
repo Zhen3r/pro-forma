@@ -41,3 +41,8 @@ vignettes/*.pdf
 data/meter_trans_2021-09.csv
 data/meters.geojson
 
+*.ai
+*.png
+*.RData
+data/parking_spot_panel.csv
+data/processed_meter_trans.csv

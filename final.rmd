@@ -34,6 +34,7 @@ library(gridExtra)
 library(knitr)
 library(lubridate)
 library(riem)
+library(osmdata)
 
 options(scipen=999)
 options(tigris_class = "sf")
@@ -49,10 +50,12 @@ v = mapview::mapview
 crs = 7131
 ```
 
-
 ## 1. Introduction
 
+Motivate the analysis – “What is the use case; why would someone want to replicate your analysis and why would they use this approach?”
+
 Parking fee?
+https://data.sfgov.org/Transportation/Meter-Rate-Schedules/fwjv-32uk
 
 parking Citations
 https://data.sfgov.org/Transportation/SFMTA-Parking-Citations/ab4h-6ztd
@@ -63,10 +66,15 @@ https://data.sfgov.org/Transportation/Parking-regulations-except-non-metered-col
 
 https://www.way.com/parking//37.7879938/-122.4074374/Union-Square/
 
+## 2. Data
 
+Meters data
 ```{r}
-meter_trans = read.csv("./data/meter_trans_2021-09.csv")
-meter_trans%>%nrow()
+meter_trans = read.csv("./data/meter_trans_2021-09.csv")%>%mutate(
+  interval60 = floor_date(ymd_hms(session_start_dt), unit = "hour"),
+  parking_time = as.numeric(ymd_hms(session_end_dt)-ymd_hms(session_start_dt))
+)%>%
+  filter(parking_time>0)
 
 meters = st_read("./data/meters.geojson")%>%
   select(post_id, ms_space_num, on_offstreet_type, active_meter_flag, meter_type,
@@ -77,22 +85,9 @@ meters = st_read("./data/meters.geojson")%>%
     ms_space_num = as.numeric(ms_space_num),
     ms_space_num = if_else(ms_space_num==0,1,ms_space_num)
   )
-
-meters.bySegId = meters%>%st_drop_geometry()%>%
-  group_by(street_seg_ctrln_id)%>%
-  summarise(ms_space_num = n())%>%
-  # filter(on_offstreet_type=="ON")%>%
-  left_join(parking_seg_census,by="street_seg_ctrln_id")
-
-meters.bySegId%>%
-  ggplot()+
-  geom_point(aes(ms_space_num,PRKG_SPLY))+
-  geom_abline(intercept = 0, slope = 1,color="red")
 ```
 
-
 Weather
-
 ```{r}
 weather.SF <- 
   riem_measures(station = "SFO", date_start = "2021-09-01", date_end = "2021-10-01")
@@ -111,34 +106,315 @@ weather.Panel <-
   mutate(Temperature = ifelse(Temperature == 0, 42, Temperature))
 ```
 
-panel
-
-```{r}
-study.panel =
+Creating Parking Time Panel
+```{r eval=FALSE}
+parking.time.panel =
   expand.grid(interval60 = unique(weather.Panel$interval60), 
-              start.station.id = unique(parking_seg_census$street_seg_ctrln_id)) 
-nrow(study.panel)
+              post_id = unique(meter_trans$post_id))%>%
+  mutate(parking_time_in_60m = 0,
+         index = row_number())
+# meter_trans%>%write_csv("./processed_meter_trans.csv")
+```
 
-meter_trans = meter_trans%>%mutate(
-  interval60 = floor_date(ymd_hms(session_start_dt), unit = "hour"),
-  parking_time = ymd_hms(session_end_dt)-ymd_hms(session_start_dt)
-)
-meter_trans[1:10000,]%>%view()
+Processing Parking Time Panel
+```{python eval=FALSE}
+"""
+The function below is used to union the parking time windows of each meter 
+and split the time windows into its panel.
+
+[Input]    meterTrans: pd.DataFrame
+[Output] parkTimePanel: numpy.array[sympy.Interval[datetime.datetime, datetime.datetime]]
+                        (each array element is a parking interval)
+"""
+
+for rowNumber in range(meterTrans.shape[0]):
+    start_time_rounded = meterTrans.loc[rowNumber, "interval60"]
+    start_time = meterTrans.loc[rowNumber, "session_start_dt"].timestamp()
+    end_time = meterTrans.loc[rowNumber, "session_end_dt"].timestamp()
+    post_id_row = meterTrans.loc[rowNumber, "post_id"]
+
+    while start_time<end_time:
+      # get the last minute of this hour
+      this_end = min(end_time, start_time + 3600 - start_time%3600)
+      this_interval = [start_time, this_end]
+      # find the index of this hour and this meter in the meter panel
+      index = meterPanel.loc[(post_id_row,start_time_rounded),"rownum"]
+      # union the time window
+      u = union(array[index], this_interval)
+      parkTimePanel[index]=u
+      # if parking time > 1hr, continue to the next hour
+      start_time_rounded += onehour
+      start_time = this_end
+```
+
+Loading Processed Parking Time Panel
+```{r}
+parking.time.panel = read.csv("data/parking_spot_panel.csv")
+
+parking.time.panel.sum = parking.time.panel%>%
+  left_join(meters%>%st_drop_geometry()%>%
+      select(street_seg_ctrln_id,post_id), by = "post_id")%>%
+  group_by(street_seg_ctrln_id,interval60)%>%
+  summarise(parking_time_in_60m = sum(parking_time_in_60m))
+parking.time.panel.sum
+
+parking.time.panel.sum%>%
+  group_by(interval60)%>%
+  summarise(parking_time_in_60m = sum(parking_time_in_60m))%>%
+  ggplot()+
+    geom_col(aes(ymd_hms(interval60),parking_time_in_60m))
+  
+```
+
+Create parking census
+```{r}
+parking_census <- read.csv("data/On-Street_Parking_Census.csv")%>%
+  select(CNN, PRKG_SPLY)
+parking_census$CNN <- as.character(parking_census$CNN)
+
+parking_seg_census <- meters%>%
+  select(street_seg_ctrln_id, geometry)%>%
+  distinct(street_seg_ctrln_id, .keep_all = T)
+
+parking_seg_census <- parking_seg_census%>%
+  left_join(parking_census, by = c("street_seg_ctrln_id"="CNN"))%>%
+  drop_na(PRKG_SPLY)%>%
+  rename(spots_num_census = PRKG_SPLY)
+
+# off_parking_census <- read.csv("data/SFMTA_Managed_Off-street_Parking.csv")%>%
+#   select(STREET_SEG_CTRLN_ID, CAPACITY)
+```
+
+City amenities data
+```{r}
+transit <- st_read("data/Muni Stops.geojson")%>%
+  st_transform(crs)
+
+park_public <- st_read("data/Recreation and Parks Properties.geojson")%>%
+  st_transform(crs)%>%
+  select(propertytype, geometry)%>%
+  rename(type=propertytype)
+
+park_private <- st_read("data/Privately Owned Public Open Spaces.geojson")%>%
+  st_transform(crs)%>%
+  select(type, geometry)
+
+cultural_district <- st_read("data/Cultural Districts.geojson")%>%
+  st_transform(crs)
+
+st_c = st_coordinates
+parking_seg_census <-
+  parking_seg_census %>%
+  mutate(
+    transit.nn =
+      nn_function(st_c(parking_seg_census), st_c(transit),1),
+    park_public.nn =
+      nn_function(st_c(parking_seg_census), st_c(st_centroid(park_public)),1),
+    cultural_district.nn =
+      nn_function(st_c(parking_seg_census), st_c(st_centroid(cultural_district)),1))
+```
+
+OSM data
+```{r}
+## OSM Data
+
+sf_boundary <- st_read("data/Bay Area Counties.geojson")%>%
+  filter(county == "San Francisco")%>%
+  st_transform(crs)%>%
+  select(geometry)
+
+q0 <- osmdata::opq(bbox = c(-122.3505,37.7025,-122.5171,37.8364)) 
+
+restaurant <- add_osm_feature(opq = q0, key = 'amenity', value = "restaurant") %>%
+  osmdata_sf(.)
+restaurant.sf <- st_geometry(restaurant$osm_points) %>%
+  st_transform(4326) %>%
+  st_sf() %>%
+  cbind(., restaurant$osm_points$amenity) %>%
+  rename(NAME = restaurant.osm_points.amenity)%>%
+  st_transform(crs)%>%
+  st_intersection(sf_boundary)%>%
+  dplyr::select(geometry)%>%
+  distinct()
+
+theatre <- add_osm_feature(opq = q0, key = 'amenity', value = "theatre") %>%
+  osmdata_sf(.)
+theatre.sf <- st_geometry(theatre$osm_points) %>%
+  st_transform(4326) %>%
+  st_sf() %>%
+  cbind(., theatre$osm_points$amenity) %>%
+  rename(NAME = theatre.osm_points.amenity)%>%
+  st_transform('EPSG:7131')%>%
+  st_intersection(sf_boundary)%>%
+  dplyr::select(geometry)%>%
+  distinct()
+
+cafe <- add_osm_feature(opq = q0, key = 'amenity', value = "cafe") %>%
+  osmdata_sf(.)
+cafe.sf <- st_geometry(cafe$osm_points) %>%
+  st_transform(4326) %>%
+  st_sf() %>%
+  cbind(., cafe$osm_points$amenity) %>%
+  rename(NAME = cafe.osm_points.amenity)%>%
+  st_transform('EPSG:7131')%>%
+  st_intersection(sf_boundary)%>%
+  dplyr::select(geometry)%>%
+  distinct()
+
+clothes <- add_osm_feature(opq = q0, key = 'shop', value = "clothes") %>%
+  osmdata_sf(.)
+clothes.sf <- st_geometry(clothes$osm_points) %>%
+  st_transform(4326) %>%
+  st_sf() %>%
+  cbind(., clothes$osm_points$shop) %>%
+  rename(NAME = clothes.osm_points.shop)%>%
+  st_transform('EPSG:7131')%>%
+  st_intersection(sf_boundary)%>%
+  dplyr::select(geometry)%>%
+  distinct()
+
+parking_seg_census <-
+  parking_seg_census %>%
+  mutate(
+    restaurant.nn =
+      nn_function(st_c(parking_seg_census), st_c(restaurant.sf),3),
+    cafe.nn =
+      nn_function(st_c(parking_seg_census), st_c(cafe.sf),3),
+    theatre.nn =
+      nn_function(st_c(parking_seg_census), st_c(theatre.sf),3),
+    clothes.nn =
+      nn_function(st_c(parking_seg_census), st_c(clothes.sf),3))
+
+park.engineer = parking.time.panel.sum%>%
+  left_join(parking_seg_census,by="street_seg_ctrln_id")
+```
+
+adding Time Lag + time dummy
+```{r}
+park.engineer = park.engineer%>%
+  rename(street.id = street_seg_ctrln_id)%>%
+  group_by(street.id) %>% 
+  mutate(lagHour = dplyr::lag(parking_time_in_60m,1),
+         lag2Hours = dplyr::lag(parking_time_in_60m,2),
+         lag3Hours = dplyr::lag(parking_time_in_60m,3),
+         lag4Hours = dplyr::lag(parking_time_in_60m,4),
+         lag12Hours = dplyr::lag(parking_time_in_60m,12),
+         lag1day = dplyr::lag(parking_time_in_60m,24),
+         lagWeek = dplyr::lag(parking_time_in_60m,24*7)) %>% 
+ ungroup()
+```
+
+adding Parking fee
+```{r}
 
 ```
 
-interval60 = floor_date(ymd_hms(starttime), unit = "hour"),
-         interval15 = floor_date(ymd_hms(starttime), unit = "15 mins"),
+adding Parking time limits
+```{r}
+
+```
+
+nn parking Citations
+```{r}
+
+```
+
+## 3. exploratory analysis  using maps and plots
+
+Meter Inconsistency Visualization
+```{r}
+meter.notfound = setdiff(unique(meter_trans$post_id),unique(meters$post_id))%>%length()
+meter.inactive = setdiff(unique(meters$post_id),unique(meter_trans$post_id))%>%length()
+meter.intersection = intersect(unique(meters$post_id),unique(meter_trans$post_id))%>%length()
+data.frame("meter.inactive"=meter.inactive,
+           "meter.notfound"=meter.notfound,
+           "meter.intersection"=meter.intersection)%>%
+  gather()%>%
+ggplot(aes(key,value))+
+  geom_col()
+```
+
+Corr
+```{r}
+park.engineer%>%
+  cor()
+```
+
+### 3.? What is the spatial or space/time process?
+```{r}
+
+```
+
+
+
+
+## 4. Describe your modeling approach and show how you arrived at your final model.
+
+```{r}
+
+```
+
+
+
+
+## 5. Validate your model with cross-validation and describe how your predictions are useful (accuracy vs. generalizability).
+```{r}
+formula1 = Trip_Count ~  
+formula2 = Trip_Count ~  
+formula3 = Trip_Count ~  
+formula4 = Trip_Count ~  
+
+reg1 <- lm(formula1, data=ride.Train)
+reg2 <- lm(formula2, data=ride.Train)
+reg3 <- lm(formula3, data=ride.Train)
+reg4 <- lm(formula4,  data=ride.Train)
+model_pred <- function(dat, fit){
+   pred <- predict(fit, newdata = dat)}
+
+ride.Test.weekNest <- 
+  as.data.frame(ride.Test) %>%
+  nest(-week) 
+
+week_predictions <- 
+  ride.Test.weekNest %>% 
+    mutate(A_Time_FE = map(.x = data, fit = reg1, .f = model_pred),
+           B_Space_FE = map(.x = data, fit = reg2, .f = model_pred),
+           C_Space_Time_FE = map(.x = data, fit = reg3, .f = model_pred),
+           D_Space_Time_Lags = map(.x = data, fit = reg4, .f = model_pred))
+
+mean.na = function(x) {mean(x,na.rm=T)}
+ sd.na = function(x) {sd(x,na.rm=T)}
+
+week_predictions <- week_predictions %>%  
+    gather(Regression, Prediction, -data, -week) %>% 
+    mutate(Observed = map(data, pull, Trip_Count),
+           Absolute_Error = map2(Observed, Prediction,  ~ abs(.x - .y)),
+           MAE = map_dbl(Absolute_Error, mean.na),
+           sd_AE = map_dbl(Absolute_Error, sd.na))
+
+week_predictions %>%
+  dplyr::select(week, Regression, MAE) %>%
+  gather(Variable, MAE, -Regression, -week) %>%
+  ggplot(aes(week%>%as.factor(), MAE)) + 
+    geom_bar(aes(fill = Regression), position = "dodge", stat="identity") +
+    scale_fill_manual(values = p5_2[1:4]) +
+    labs(title = "Mean Absolute Errors by model specification and week",x="week") +
+  plotTheme()
+```
+
+
+
+
+## 6. Provide additional maps and data visualizations to show that your model is useful.
+```{r}
+
+```
 
 
 
 
 
+## 7. Discussion
 
-
-
-
-
-
-
-
+### 7.1 Talk about how your analysis meets the use case you set out to address.
+### 7.2 What could you do to make the analysis better?
