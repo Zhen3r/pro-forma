@@ -35,6 +35,7 @@ library(knitr)
 library(lubridate)
 library(riem)
 library(osmdata)
+library(caret)
 
 options(scipen=999)
 options(tigris_class = "sf")
@@ -85,25 +86,6 @@ meters = st_read("./data/meters.geojson")%>%
     ms_space_num = as.numeric(ms_space_num),
     ms_space_num = if_else(ms_space_num==0,1,ms_space_num)
   )
-```
-
-Weather
-```{r}
-weather.SF <- 
-  riem_measures(station = "SFO", date_start = "2021-09-01", date_end = "2021-10-01")
-
-weather.Panel <-  
-  weather.SF %>%
-  mutate_if(is.character, list(~replace(as.character(.), is.na(.), "0"))) %>% 
-  replace(is.na(.), 0) %>%
-  mutate(interval60 = ymd_h(substr(valid, 1, 13))) %>%
-  mutate(week = week(interval60),
-         dotw = wday(interval60, label=TRUE)) %>%
-  group_by(interval60) %>%
-  summarize(Temperature = max(tmpf),
-            Percipitation = sum(p01i),
-            Wind_Speed = max(sknt)) %>%
-  mutate(Temperature = ifelse(Temperature == 0, 42, Temperature))
 ```
 
 Creating Parking Time Panel
@@ -300,7 +282,11 @@ park.engineer = park.engineer%>%
          lag4Hours = dplyr::lag(parking_time_in_60m,4),
          lag12Hours = dplyr::lag(parking_time_in_60m,12),
          lag1day = dplyr::lag(parking_time_in_60m,24),
-         lagWeek = dplyr::lag(parking_time_in_60m,24*7)) %>% 
+         lagWeek = dplyr::lag(parking_time_in_60m,24*7),
+         week = interval60%>%week,
+         weekday = interval60%>%wday(T),
+         is.weekend = interval60%>%wday(week_start=1)>=6,
+         hour = interval60%>%hour()) %>% 
  ungroup()
 ```
 
@@ -317,6 +303,29 @@ adding Parking time limits
 nn parking Citations
 ```{r}
 
+```
+
+Weather
+```{r}
+weather.SF <- 
+  riem_measures(station = "SFO", date_start = "2021-09-01", date_end = "2021-10-01")
+
+weather.Panel <-  
+  weather.SF %>%
+  mutate_if(is.character, list(~replace(as.character(.), is.na(.), "0"))) %>% 
+  replace(is.na(.), 0) %>%
+  mutate(interval60 = ymd_h(substr(valid, 1, 13))) %>%
+  mutate(week = week(interval60),
+         dotw = wday(interval60, label=TRUE)) %>%
+  group_by(interval60) %>%
+  summarize(Temperature = max(tmpf),
+            Percipitation = sum(p01i),
+            Wind_Speed = max(sknt)) %>%
+  mutate(Temperature = ifelse(Temperature == 0, 42, Temperature))
+
+park.engineer = park.engineer%>%
+  mutate(interval60 = ymd_hms(interval60))%>%
+  left_join(weather.Panel,by="interval60")
 ```
 
 ## 3. exploratory analysis  using maps and plots
@@ -359,22 +368,21 @@ park.engineer%>%
 
 ## 5. Validate your model with cross-validation and describe how your predictions are useful (accuracy vs. generalizability).
 ```{r}
-formula1 = Trip_Count ~  
-formula2 = Trip_Count ~  
-formula3 = Trip_Count ~  
-formula4 = Trip_Count ~  
+formula1 = parking_time_in_60m ~ PRKG_SPLY + lagHour + lag2Hours+lag3Hours+lag4Hours+lag12Hours+lag1day+week+weekday+is.weekend+hour
+formula2 = parking_time_in_60m ~  PRKG_SPLY + lagHour + lag2Hours+lag3Hours+lag4Hours+lag12Hours+lag1day+week+weekday+is.weekend+hour+transit.nn +park_public.nn+park_public.nn+cultural_district.nn+restaurant.nn+cafe.nn+theatre.nn+clothes.nn+Temperature+Percipitation+Wind_Speed
+# formula3 = parking_time_in_60m ~  
+# formula4 = parking_time_in_60m ~  
 
-reg1 <- lm(formula1, data=ride.Train)
-reg2 <- lm(formula2, data=ride.Train)
-reg3 <- lm(formula3, data=ride.Train)
-reg4 <- lm(formula4,  data=ride.Train)
-model_pred <- function(dat, fit){
-   pred <- predict(fit, newdata = dat)}
+# cross-validation
+fitControl <- caret::trainControl(method = "cv", number = 5)
+set.seed(1)
+reg.cv = caret::train(formula2, data = park.engineer, 
+     method = "lm", trControl = fitControl, na.action = na.pass)
+summary(reg.cv)
+```
 
-ride.Test.weekNest <- 
-  as.data.frame(ride.Test) %>%
-  nest(-week) 
 
+```{r}
 week_predictions <- 
   ride.Test.weekNest %>% 
     mutate(A_Time_FE = map(.x = data, fit = reg1, .f = model_pred),
@@ -402,7 +410,9 @@ week_predictions %>%
   plotTheme()
 ```
 
+```{r}
 
+```
 
 
 ## 6. Provide additional maps and data visualizations to show that your model is useful.
