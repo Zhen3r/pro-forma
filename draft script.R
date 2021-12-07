@@ -229,3 +229,47 @@ meters.bySegId%>%
 study.panel =
   expand.grid(interval60 = unique(weather.Panel$interval60), 
               start.station.id = unique(parking_seg_census$street_seg_ctrln_id)) 
+
+plotData.lag <-
+  as.data.frame(park.engineer)%>%
+  dplyr::select(starts_with("lag"), parking_time_in_60m) %>%
+  gather(Variable, Value, -parking_time_in_60m) %>%
+  mutate(Variable = fct_relevel(Variable, "lagHour","lag2Hours","lag3Hours",
+                                "lag4Hours","lag12Hours","lag1day"))
+correlation.lag <-
+  group_by(plotData.lag, Variable) %>%
+  summarize(correlation = round(cor(Value, parking_time_in_60m, use = "complete.obs"), 2)) %>%
+  kable(caption = "Parking Time in One Hour") %>%
+  kable_styling("striped", full_width = F)
+
+correlation.lag
+
+park.engineer <-
+  park.engineer%>%
+  mutate(week = week(interval60),
+         dotw = wday(interval60, label=TRUE))
+sundays <- 
+  mutate(park.engineer,
+         sunday = ifelse(dotw == "Sun" & hour(interval60) == 1,
+                         interval60, 0)) %>%
+  filter(sunday != 0) 
+
+park.engineer.test <-
+  park.engineer%>%
+  st_as_sf()
+
+ggplot()+
+  geom_sf(data =sf_boundary)+
+  geom_sf(data = st_as_sf(park.engineer) %>%
+               group_by(street.id, week)%>%
+               tally(),
+             aes(color = n), 
+             fill = "transparent", alpha = 0.8, size = 1)+
+  scale_colour_viridis(direction = -1,
+                       discrete = FALSE, option = "D")+
+  ylim(min(dat_census$start_lat), max(dat_census$start_lat))+
+  xlim(min(dat_census$start_lon), max(dat_census$start_lon))+
+  facet_grid(~week)+
+  labs(title="Sum of rideshare trips by station and week",
+       subtitle = "Philadelphia, October 8th - November 11st, 2019")+
+  mapTheme()
