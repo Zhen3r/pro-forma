@@ -273,3 +273,71 @@ ggplot()+
   labs(title="Sum of rideshare trips by station and week",
        subtitle = "Philadelphia, October 8th - November 11st, 2019")+
   mapTheme()
+
+
+
+library(hms)
+
+int.ampeak <- interval(as_hms("07:00:00"),as_hms("10:00:00"))
+int.pmpeak <- interval(as_hms("15:00:00"),as_hms("18:00:00"))
+int.midday <- interval(as_hms("10:00:00"),as_hms("15:00:00"))
+int.night <- interval(as_hms("18:00:00"),as_hms("23:00:00"))
+int.overnight <- interval(as_hms("00:00:00"),as_hms("07:00:00"))
+
+park.engineer <-park.engineer%>%
+  mutate(period = case_when(ymd_hms(paste0('1970-01-01',str_sub(interval60, 12)))%within% int.ampeak ~ "AM",
+                            ymd_hms(paste0('1970-01-01',str_sub(interval60, 12)))%within% int.pmpeak ~ "PM",
+                            ymd_hms(paste0('1970-01-01',str_sub(interval60, 12)))%within% int.midday ~ "Mid_Day",
+                            ymd_hms(paste0('1970-01-01',str_sub(interval60, 12)))%within% int.night ~ "Night",
+                            ymd_hms(paste0('1970-01-01',str_sub(interval60, 12)))%within% int.overnight ~ "Overnight"))
+
+
+parking.time.panel.sum %>%
+  group_by(interval60, street_seg_ctrln_id, period) %>%
+  summarize(mean_time = mean(parking_time_in_60m))%>%
+  ggplot()+
+  geom_histogram(aes(mean_time), binwidth = 10000)+
+  labs(title="Mean Number of Hourly Trips Per Station",
+       subtitle="Philadelphia, October 8th - November 11st, 2019",
+       x="Mean Parking Time", 
+       y="Frequency")+
+  facet_wrap(~period)+
+  plotTheme()
+
+weather.Panel$interval60<- as.character(weather.Panel$interval60)
+
+park.engineer <- park.engineer%>%
+  left_join(weather.Panel, by = "interval60")
+
+sf_neighborhood <-st_read("/Users/inordia/Desktop/UPenn搞起来/592/pro-forma/data/SF Find Neighborhoods.geojson")%>%
+  st_transform('EPSG:7131')
+  
+
+park.engineer %>%
+  group_by(interval60, street.id, period) %>%
+  summarize(mean_time = mean(parking_time_in_60m))%>%
+  ungroup()%>%
+  left_join(park.engineer)%>%
+  st_as_sf()%>%
+ggplot()+
+  geom_sf(aes(color=mean_time),
+          fill = "transparent", alpha=0.8, size=1)+
+  geom_sf(data = sf_neighborhood)+
+  facet_grid(~period)
+
+  geom_point(data = dat_census %>%
+               group_by(start_station, start_lat, start_lon, week)%>%
+               tally(),
+             aes(x=start_lon, y = start_lat, color = n), 
+             fill = "transparent", alpha = 0.8, size = 1)+
+  scale_colour_viridis(direction = -1,
+                       discrete = FALSE, option = "D")+
+  ylim(min(dat_census$start_lat), max(dat_census$start_lat))+
+  xlim(min(dat_census$start_lon), max(dat_census$start_lon))+
+  facet_grid(~week)+
+  labs(title="Sum of rideshare trips by station and week",
+       subtitle = "Philadelphia, October 8th - November 11st, 2019")+
+  mapTheme()
+
+
+
