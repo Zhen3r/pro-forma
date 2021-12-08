@@ -294,12 +294,13 @@ parking_seg_census <-
       nn_function(st_c(parking_seg_census), st_c(clothes.sf),3))
 
 park.engineer = parking.time.panel.sum%>%
-  left_join(parking_seg_census,by="street_seg_ctrln_id")
+  left_join(
+    parking_seg_census%>%
+      # log all the nn vars
+      mutate_at(ends_with(".nn")%>%vars()%>%all_of(),log),
+    by="street_seg_ctrln_id")
 
-weather.Panel$interval60<- as.character(weather.Panel$interval60)
 
-park.engineer <- park.engineer%>%
-  left_join(weather.Panel, by = "interval60")
 ```
 
 adding Time Lag + time dummy
@@ -429,7 +430,7 @@ parking.time.panel.sum %>%
 
 ```
 
-```{r}
+```{r fig.height=5, fig.width=8}
 park.engineer <-park.engineer%>%
   mutate(period = case_when(ymd_hms(paste0('1970-01-01',str_sub(interval60, 12)))%within% int.ampeak ~ "AM",
                             ymd_hms(paste0('1970-01-01',str_sub(interval60, 12)))%within% int.pmpeak ~ "PM",
@@ -437,22 +438,39 @@ park.engineer <-park.engineer%>%
                             ymd_hms(paste0('1970-01-01',str_sub(interval60, 12)))%within% int.night ~ "Night",
                             ymd_hms(paste0('1970-01-01',str_sub(interval60, 12)))%within% int.overnight ~ "Overnight"))
 
-park.engineer %>%
+park.engineer.map = park.engineer %>%
   group_by(interval60, street.id, period) %>%
   summarize(mean_time = mean(parking_time_in_60m))%>%
   ungroup()%>%
   left_join(park.engineer)%>%
-  st_as_sf()%>%
+  mutate(across(period, factor, levels=c("Overnight","AM","Mid_Day","PM","Night"))) %>%
+  st_sf()
+map.lables = qBr(park.engineer.map,"mean_time")
+
+park.engineer.map%>%
 ggplot()+
-  geom_sf(aes(color=mean_time),
-          fill = "transparent", alpha=0.8, size=1)+
-  geom_sf(data = sf_neighborhood)+
-  facet_grid(~period)
+  geom_sf(data = sf_neighborhood, fill="#cccccc", color="#999999")+
+  geom_sf(aes(color=mean_time,size=mean_time,alpha=mean_time),
+           stroke = .5, shape = 16)+
+  viridis::scale_color_viridis(option = "C")+
+  scale_size_continuous(range = c(0.3,2))+
+  scale_alpha_continuous(range = c(0.2,0.8))+
+  facet_wrap(~period,nrow=2)+
+  labs(title="Mean Parking Time of Street Segments by Time",
+       subtitle = "San Francisco, 2021.9")+
+  mapTheme()
 ```
 
-
-```{r}
-
+nn
+```{r fig.height=3, fig.width=8}
+parking_seg_census%>%
+  pivot_longer(cols=ends_with(".nn"),names_to="name1",values_to="value_raw")%>%
+  mutate(value_logged = log(value_raw))%>%
+  pivot_longer(cols=starts_with("value"),names_to="if_log",values_to="name_log")%>%
+  ggplot()+
+    geom_histogram(aes(name_log),bins=50)+
+    facet_wrap(if_log~name1,scales = "free",nrow=2)+
+    plotTheme()
 ```
 
 
