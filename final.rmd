@@ -151,22 +151,34 @@ parking.time.panel.sum%>%
   ggplot()+
     geom_col(aes(ymd_hms(interval60),parking_time_in_60m))
 
+parking.time.panel.sum<-
+  parking.time.panel.sum%>%
+  mutate(status = ifelse(week<= 38, "train", "test"))
+
 sundays <- 
   mutate(parking.time.panel.sum,
          sunday = ifelse(dotw == "Sun" & hour(interval60) == 1,
                          interval60, 0)) %>%
-  filter(sunday != 0) 
+  filter(sunday != 0)
+
+sundays <-
+  sundays%>%
+  mutate(sunday = as.POSIXct(sunday))
 
 parking.time.panel.sum%>%
   filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-30 00:00:00")%>%
-  group_by(interval60)%>%
+  group_by(interval60, status)%>%
   summarise(parking_time_in_60m = sum(parking_time_in_60m))%>%
-  ggplot(aes(ymd_hms(interval60),parking_time_in_60m, colour = "red"))+
+  ggplot(aes(ymd_hms(interval60),parking_time_in_60m, colour = status))+
     geom_line()+
-  geom_vline(data = sundays, aes(xintercept = which(levels(crazyfactor) == sunday)))
+  geom_vline(data = sundays, aes(xintercept = sunday))+
+  scale_colour_manual(values = p2)+
+  labs(title="Total Parking Time by week in SF: September 2021",
+       x="Day", y="Total Parking Time") +
+  plotTheme() + theme(panel.grid.major = element_blank())
   
 parking.time.panel.sum%>%
-  filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-16 00:00:00")%>%
+  filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-30 00:00:00")%>%
   filter(street_seg_ctrln_id == "1363000")%>%
   ggplot(aes(ymd_hms(interval60),parking_time_in_60m, colour = "red"))+
     geom_line()+
@@ -493,14 +505,13 @@ Corr
 park.Train = filter(park.engineer, week <= 37) # 35~37
 park.Test = filter(park.engineer, week > 37 & week < 40) # 38~39
 
-formula1 = parking_time_in_60m ~ PRKG_SPLY + Temperature+Percipitation+Wind_Speed
+formula1 = parking_time_in_60m ~ spots_num_census + Temperature+Wind_Speed+weekday+hour
 
-formula2 = parking_time_in_60m ~ PRKG_SPLY + lagHour + lag2Hours+lag3Hours+lag4Hours+lag1day+weekday+is.weekend+hour+Temperature+Percipitation+Wind_Speed
+formula2 = parking_time_in_60m ~  spots_num_census + Temperature+Wind_Speed +transit.nn +park_public.nn+park_public.nn+cultural_district.nn+restaurant.nn+cafe.nn+theatre.nn+clothes.nn+weekday+hour
 
-formula3 = parking_time_in_60m ~  PRKG_SPLY + Temperature+Percipitation+Wind_Speed +transit.nn +park_public.nn+park_public.nn+cultural_district.nn+restaurant.nn+cafe.nn+theatre.nn+clothes.nn+Temperature+Percipitation+Wind_Speed
+formula3 = parking_time_in_60m ~ spots_num_census + lagHour + lag2Hours+lag3Hours+lag4Hours+lag1day+Temperature+Wind_Speed+weekday+hour
 
-formula4 = parking_time_in_60m ~  PRKG_SPLY + lagHour + lag2Hours+lag3Hours+lag4Hours+lag12Hours+lag1day+weekday+is.weekend+hour+transit.nn +park_public.nn+park_public.nn+cultural_district.nn+restaurant.nn+cafe.nn+theatre.nn+clothes.nn+Temperature+Percipitation+Wind_Speed
-
+formula4 = parking_time_in_60m ~  spots_num_census + lagHour + lag2Hours+lag3Hours+lag4Hours+lag12Hours+lag1day+weekday+hour+transit.nn +park_public.nn+park_public.nn+cultural_district.nn+restaurant.nn+cafe.nn+theatre.nn+clothes.nn+Temperature+Wind_Speed
 
 reg1 <- lm(formula1, data=park.Train)
 reg2 <- lm(formula2, data=park.Train)
@@ -511,6 +522,9 @@ summary(reg1)
 summary(reg2)
 summary(reg3)
 summary(reg4)
+
+stargazer(reg1, reg2, reg3, reg4, type ="text", font.size = "small", single.row = TRUE)
+stargazer(reg4, type ="text", font.size = "small", single.row = TRUE)
 ```
 
 ```{r}
@@ -523,10 +537,10 @@ park.Test.weekNest <-
 
 week_predictions <- 
   park.Test.weekNest %>% 
-    mutate(Weather_model = map(.x = data, fit = reg1, .f = model_pred),
-           Time_Lag_model = map(.x = data, fit = reg2, .f = model_pred),
-           Space_Lag_model = map(.x = data, fit = reg3, .f = model_pred),
-           Time_Space_Lag_model = map(.x = data, fit = reg4, .f = model_pred))
+    mutate(Weather_Time_model = map(.x = data, fit = reg1, .f = model_pred),
+           Space_Time_model = map(.x = data, fit = reg2, .f = model_pred),
+           Lag_Time_model = map(.x = data, fit = reg3, .f = model_pred),
+           Time_Space_Lag_Weather_model = map(.x = data, fit = reg4, .f = model_pred))
 
 mean.na = function(x) {mean(x,na.rm=T)}
 sd.na = function(x) {sd(x,na.rm=T)}
