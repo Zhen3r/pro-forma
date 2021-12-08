@@ -357,3 +357,19 @@ park.engineer %>%
           fill = "transparent", alpha=0.8, size=0.2)+
   geom_sf(data = sf_neighborhood)+
   facet_grid(~period)  
+
+
+park.engineer <- park.engineer%>%
+  group_by(street.id) %>% 
+  mutate(lagHour = dplyr::lag(parking_time_in_60m,1),
+         lag2Hours = dplyr::lag(parking_time_in_60m,2),
+         lag3Hours = dplyr::lag(parking_time_in_60m,3),
+         lag4Hours = dplyr::lag(parking_time_in_60m,4),
+         lag12Hours = dplyr::lag(parking_time_in_60m,12),
+         lag1day = dplyr::lag(parking_time_in_60m,24),
+         lagWeek = dplyr::lag(parking_time_in_60m,24*7),
+         week = interval60%>%week,
+         weekday = interval60%>%wday(T),
+         is.weekend = interval60%>%wday(week_start=1)>=6,
+         hour = interval60%>%hour()) %>% 
+  ungroup()

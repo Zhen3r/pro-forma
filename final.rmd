@@ -487,14 +487,13 @@ Corr
 park.Train = filter(park.engineer, week <= 37) # 35~37
 park.Test = filter(park.engineer, week > 37 & week < 40) # 38~39
 
-formula1 = parking_time_in_60m ~ PRKG_SPLY + Temperature+Percipitation+Wind_Speed
+formula1 = parking_time_in_60m ~ spots_num_census + Temperature+Wind_Speed+weekday+hour
 
-formula2 = parking_time_in_60m ~ PRKG_SPLY + lagHour + lag2Hours+lag3Hours+lag4Hours+lag1day+weekday+is.weekend+hour+Temperature+Percipitation+Wind_Speed
+formula2 = parking_time_in_60m ~  spots_num_census + Temperature+Wind_Speed +transit.nn +park_public.nn+park_public.nn+cultural_district.nn+restaurant.nn+cafe.nn+theatre.nn+clothes.nn+weekday+hour
 
-formula3 = parking_time_in_60m ~  PRKG_SPLY + Temperature+Percipitation+Wind_Speed +transit.nn +park_public.nn+park_public.nn+cultural_district.nn+restaurant.nn+cafe.nn+theatre.nn+clothes.nn+Temperature+Percipitation+Wind_Speed
+formula3 = parking_time_in_60m ~ spots_num_census + lagHour + lag2Hours+lag3Hours+lag4Hours+lag1day+Temperature+Wind_Speed+weekday+hour
 
-formula4 = parking_time_in_60m ~  PRKG_SPLY + lagHour + lag2Hours+lag3Hours+lag4Hours+lag12Hours+lag1day+weekday+is.weekend+hour+transit.nn +park_public.nn+park_public.nn+cultural_district.nn+restaurant.nn+cafe.nn+theatre.nn+clothes.nn+Temperature+Percipitation+Wind_Speed
-
+formula4 = parking_time_in_60m ~  spots_num_census + lagHour + lag2Hours+lag3Hours+lag4Hours+lag12Hours+lag1day+weekday+hour+transit.nn +park_public.nn+park_public.nn+cultural_district.nn+restaurant.nn+cafe.nn+theatre.nn+clothes.nn+Temperature+Wind_Speed
 
 reg1 <- lm(formula1, data=park.Train)
 reg2 <- lm(formula2, data=park.Train)
@@ -505,6 +504,9 @@ summary(reg1)
 summary(reg2)
 summary(reg3)
 summary(reg4)
+
+stargazer(reg1, reg2, reg3, reg4, type ="text", font.size = "small", single.row = TRUE)
+stargazer(reg4, type ="text", font.size = "small", single.row = TRUE)
 ```
 
 ```{r}
@@ -517,10 +519,10 @@ park.Test.weekNest <-
 
 week_predictions <- 
   park.Test.weekNest %>% 
-    mutate(Weather_model = map(.x = data, fit = reg1, .f = model_pred),
-           Time_Lag_model = map(.x = data, fit = reg2, .f = model_pred),
-           Space_Lag_model = map(.x = data, fit = reg3, .f = model_pred),
-           Time_Space_Lag_model = map(.x = data, fit = reg4, .f = model_pred))
+    mutate(Weather_Time_model = map(.x = data, fit = reg1, .f = model_pred),
+           Space_Time_model = map(.x = data, fit = reg2, .f = model_pred),
+           Lag_Time_model = map(.x = data, fit = reg3, .f = model_pred),
+           Time_Space_Lag_Weather_model = map(.x = data, fit = reg4, .f = model_pred))
 
 mean.na = function(x) {mean(x,na.rm=T)}
 sd.na = function(x) {sd(x,na.rm=T)}
