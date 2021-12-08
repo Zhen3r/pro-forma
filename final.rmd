@@ -318,15 +318,21 @@ park.engineer = park.engineer%>%
 adding Parking fee
 ```{r}
 
+
+
 ```
 
 adding Parking time limits
 ```{r}
 
+
+
 ```
 
 nn parking Citations
 ```{r}
+
+
 
 ```
 
@@ -407,8 +413,7 @@ parking.time.panel.sum %>%
 
 Corr
 ```{r}
-park.engineer%>%
-  cor()
+
 ```
 
 ### 3.? What is the spatial or space/time process?
@@ -422,18 +427,60 @@ park.engineer%>%
 ## 4. Describe your modeling approach and show how you arrived at your final model.
 
 ```{r}
+park.Train = filter(park.engineer, week <= 38) # 35~38
+park.Test = filter(park.engineer, week > 38) # 39~40
 
-```
-
-
-
-
-## 5. Validate your model with cross-validation and describe how your predictions are useful (accuracy vs. generalizability).
-```{r}
 formula1 = parking_time_in_60m ~ PRKG_SPLY + lagHour + lag2Hours+lag3Hours+lag4Hours+lag12Hours+lag1day+week+weekday+is.weekend+hour
 formula2 = parking_time_in_60m ~  PRKG_SPLY + lagHour + lag2Hours+lag3Hours+lag4Hours+lag12Hours+lag1day+week+weekday+is.weekend+hour+transit.nn +park_public.nn+park_public.nn+cultural_district.nn+restaurant.nn+cafe.nn+theatre.nn+clothes.nn+Temperature+Percipitation+Wind_Speed
 # formula3 = parking_time_in_60m ~  
 # formula4 = parking_time_in_60m ~  
+
+reg1 <- lm(formula1, data=park.Train)
+reg2 <- lm(formula2, data=park.Train)
+# reg3 <- lm(formula3, data=park.Train)
+# reg4 <- lm(formula4,  data=park.Train)
+summary(reg1)
+summary(reg2)
+```
+
+```{r}
+model_pred <- function(dat, fit){
+   pred <- predict(fit, newdata = dat)}
+
+park.Test.weekNest <- 
+  as.data.frame(park.Test) %>%
+  nest(-week) 
+
+week_predictions <- 
+  park.Test.weekNest %>% 
+    mutate(A_Time_FE = map(.x = data, fit = reg1, .f = model_pred),
+           B_Time_Space_FE = map(.x = data, fit = reg2, .f = model_pred))
+
+mean.na = function(x) {mean(x,na.rm=T)}
+ sd.na = function(x) {sd(x,na.rm=T)}
+
+week_predictions <- week_predictions %>%  
+    gather(Regression, Prediction, -data, -week) %>% 
+    mutate(Observed = map(data, pull, Trip_Count),
+           Absolute_Error = map2(Observed, Prediction,  ~ abs(.x - .y)),
+           MAE = map_dbl(Absolute_Error, mean.na),
+           sd_AE = map_dbl(Absolute_Error, sd.na))
+
+week_predictions %>%
+  dplyr::select(week, Regression, MAE) %>%
+  gather(Variable, MAE, -Regression, -week) %>%
+  ggplot(aes(week%>%as.factor(), MAE)) + 
+    geom_bar(aes(fill = Regression), position = "dodge", stat="identity") +
+    scale_fill_manual(values = p5_2[1:4]) +
+    labs(title = "Mean Absolute Errors by model specification and week",x="week") +
+  plotTheme()
+
+```
+
+
+## 5. Validate your model with cross-validation and describe how your predictions are useful (accuracy vs. generalizability).
+```{r}
+
 
 # cross-validation
 fitControl <- caret::trainControl(method = "cv", number = 5)
@@ -474,11 +521,17 @@ week_predictions %>%
 
 ```{r}
 
+
+
+
 ```
 
 
 ## 6. Provide additional maps and data visualizations to show that your model is useful.
 ```{r}
+
+
+
 
 ```
 
