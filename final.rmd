@@ -151,22 +151,34 @@ parking.time.panel.sum%>%
   ggplot()+
     geom_col(aes(ymd_hms(interval60),parking_time_in_60m))
 
+parking.time.panel.sum<-
+  parking.time.panel.sum%>%
+  mutate(status = ifelse(week<= 38, "train", "test"))
+
 sundays <- 
   mutate(parking.time.panel.sum,
          sunday = ifelse(dotw == "Sun" & hour(interval60) == 1,
                          interval60, 0)) %>%
-  filter(sunday != 0) 
+  filter(sunday != 0)
+
+sundays <-
+  sundays%>%
+  mutate(sunday = as.POSIXct(sunday))
 
 parking.time.panel.sum%>%
   filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-30 00:00:00")%>%
-  group_by(interval60)%>%
+  group_by(interval60, status)%>%
   summarise(parking_time_in_60m = sum(parking_time_in_60m))%>%
-  ggplot(aes(ymd_hms(interval60),parking_time_in_60m, colour = "red"))+
+  ggplot(aes(ymd_hms(interval60),parking_time_in_60m, colour = status))+
     geom_line()+
-  geom_vline(data = sundays, aes(xintercept = which(levels(crazyfactor) == sunday)))
+  geom_vline(data = sundays, aes(xintercept = sunday))+
+  scale_colour_manual(values = p2)+
+  labs(title="Total Parking Time by week in SF: September 2021",
+       x="Day", y="Total Parking Time") +
+  plotTheme() + theme(panel.grid.major = element_blank())
   
 parking.time.panel.sum%>%
-  filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-16 00:00:00")%>%
+  filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-30 00:00:00")%>%
   filter(street_seg_ctrln_id == "1363000")%>%
   ggplot(aes(ymd_hms(interval60),parking_time_in_60m, colour = "red"))+
     geom_line()+

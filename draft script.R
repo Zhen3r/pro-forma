@@ -344,4 +344,16 @@ parking.time.panel.sum<-
 mutate(week = week(interval60),
        dotw = wday(interval60, label=TRUE))
 
-  
+
+
+park.engineer %>%
+  group_by(interval60, street.id, period) %>%
+  summarize(mean_time = mean(parking_time_in_60m))%>%
+  ungroup()%>%
+  left_join(park.engineer)%>%
+  st_as_sf()%>%
+  ggplot()+
+  geom_sf(aes(color=mean_time),
+          fill = "transparent", alpha=0.8, size=0.2)+
+  geom_sf(data = sf_neighborhood)+
+  facet_grid(~period)  
