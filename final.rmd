@@ -45,7 +45,7 @@ options(tigris_class = "sf")
 options(tigris_use_cache = TRUE)
 source("functions.r")
 
-p5 = inferno(5)
+p5 = viridis::plasma(5)
 p2 = p5[c(4,2)]
 
 v = mapview::mapview
@@ -364,7 +364,8 @@ weather.Panel <-
 
 park.engineer = park.engineer%>%
   mutate(interval60 = ymd_hms(interval60))%>%
-  left_join(weather.Panel,by="interval60")
+  left_join(weather.Panel,by="interval60")%>%
+  drop_na(Temperature) # to remove data on OCT.01
 ```
 
 ## 3. exploratory analysis  using maps and plots
@@ -471,20 +472,27 @@ Corr
 ## 4. Describe your modeling approach and show how you arrived at your final model.
 
 ```{r}
-park.Train = filter(park.engineer, week <= 38) # 35~38
-park.Test = filter(park.engineer, week > 38) # 39~40
+park.Train = filter(park.engineer, week <= 37) # 35~37
+park.Test = filter(park.engineer, week > 37 & week < 40) # 38~39
 
-formula1 = parking_time_in_60m ~ PRKG_SPLY + lagHour + lag2Hours+lag3Hours+lag4Hours+lag12Hours+lag1day+week+weekday+is.weekend+hour
-formula2 = parking_time_in_60m ~  PRKG_SPLY + lagHour + lag2Hours+lag3Hours+lag4Hours+lag12Hours+lag1day+week+weekday+is.weekend+hour+transit.nn +park_public.nn+park_public.nn+cultural_district.nn+restaurant.nn+cafe.nn+theatre.nn+clothes.nn+Temperature+Percipitation+Wind_Speed
-# formula3 = parking_time_in_60m ~  
-# formula4 = parking_time_in_60m ~  
+formula1 = parking_time_in_60m ~ PRKG_SPLY + Temperature+Percipitation+Wind_Speed
+
+formula2 = parking_time_in_60m ~ PRKG_SPLY + lagHour + lag2Hours+lag3Hours+lag4Hours+lag1day+weekday+is.weekend+hour+Temperature+Percipitation+Wind_Speed
+
+formula3 = parking_time_in_60m ~  PRKG_SPLY + Temperature+Percipitation+Wind_Speed +transit.nn +park_public.nn+park_public.nn+cultural_district.nn+restaurant.nn+cafe.nn+theatre.nn+clothes.nn+Temperature+Percipitation+Wind_Speed
+
+formula4 = parking_time_in_60m ~  PRKG_SPLY + lagHour + lag2Hours+lag3Hours+lag4Hours+lag12Hours+lag1day+weekday+is.weekend+hour+transit.nn +park_public.nn+park_public.nn+cultural_district.nn+restaurant.nn+cafe.nn+theatre.nn+clothes.nn+Temperature+Percipitation+Wind_Speed
+
 
 reg1 <- lm(formula1, data=park.Train)
 reg2 <- lm(formula2, data=park.Train)
-# reg3 <- lm(formula3, data=park.Train)
-# reg4 <- lm(formula4,  data=park.Train)
+reg3 <- lm(formula3, data=park.Train)
+reg4 <- lm(formula4, data=park.Train)
+
 summary(reg1)
 summary(reg2)
+summary(reg3)
+summary(reg4)
 ```
 
 ```{r}
@@ -497,15 +505,17 @@ park.Test.weekNest <-
 
 week_predictions <- 
   park.Test.weekNest %>% 
-    mutate(A_Time_FE = map(.x = data, fit = reg1, .f = model_pred),
-           B_Time_Space_FE = map(.x = data, fit = reg2, .f = model_pred))
+    mutate(Weather_model = map(.x = data, fit = reg1, .f = model_pred),
+           Time_Lag_model = map(.x = data, fit = reg2, .f = model_pred),
+           Space_Lag_model = map(.x = data, fit = reg3, .f = model_pred),
+           Time_Space_Lag_model = map(.x = data, fit = reg4, .f = model_pred))
 
 mean.na = function(x) {mean(x,na.rm=T)}
- sd.na = function(x) {sd(x,na.rm=T)}
+sd.na = function(x) {sd(x,na.rm=T)}
 
 week_predictions <- week_predictions %>%  
     gather(Regression, Prediction, -data, -week) %>% 
-    mutate(Observed = map(data, pull, Trip_Count),
+    mutate(Observed = map(data, pull, parking_time_in_60m),
            Absolute_Error = map2(Observed, Prediction,  ~ abs(.x - .y)),
            MAE = map_dbl(Absolute_Error, mean.na),
            sd_AE = map_dbl(Absolute_Error, sd.na))
@@ -515,7 +525,7 @@ week_predictions %>%
   gather(Variable, MAE, -Regression, -week) %>%
   ggplot(aes(week%>%as.factor(), MAE)) + 
     geom_bar(aes(fill = Regression), position = "dodge", stat="identity") +
-    scale_fill_manual(values = p5_2[1:4]) +
+    scale_fill_manual(values = p5[1:5]) +
     labs(title = "Mean Absolute Errors by model specification and week",x="week") +
   plotTheme()
 
@@ -524,50 +534,30 @@ week_predictions %>%
 
 ## 5. Validate your model with cross-validation and describe how your predictions are useful (accuracy vs. generalizability).
 ```{r}
-
-
 # cross-validation
-fitControl <- caret::trainControl(method = "cv", number = 5)
+fitControl <- caret::trainControl(method = "cv", number = 30)
 set.seed(1)
-reg.cv = caret::train(formula2, data = park.engineer, 
+reg.cv = caret::train(formula4, data = park.engineer, 
      method = "lm", trControl = fitControl, na.action = na.pass)
 summary(reg.cv)
 ```
 
 
-```{r}
-week_predictions <- 
-  ride.Test.weekNest %>% 
-    mutate(A_Time_FE = map(.x = data, fit = reg1, .f = model_pred),
-           B_Space_FE = map(.x = data, fit = reg2, .f = model_pred),
-           C_Space_Time_FE = map(.x = data, fit = reg3, .f = model_pred),
-           D_Space_Time_Lags = map(.x = data, fit = reg4, .f = model_pred))
-
-mean.na = function(x) {mean(x,na.rm=T)}
- sd.na = function(x) {sd(x,na.rm=T)}
-
-week_predictions <- week_predictions %>%  
-    gather(Regression, Prediction, -data, -week) %>% 
-    mutate(Observed = map(data, pull, Trip_Count),
-           Absolute_Error = map2(Observed, Prediction,  ~ abs(.x - .y)),
-           MAE = map_dbl(Absolute_Error, mean.na),
-           sd_AE = map_dbl(Absolute_Error, sd.na))
-
-week_predictions %>%
-  dplyr::select(week, Regression, MAE) %>%
-  gather(Variable, MAE, -Regression, -week) %>%
-  ggplot(aes(week%>%as.factor(), MAE)) + 
-    geom_bar(aes(fill = Regression), position = "dodge", stat="identity") +
-    scale_fill_manual(values = p5_2[1:4]) +
-    labs(title = "Mean Absolute Errors by model specification and week",x="week") +
-  plotTheme()
-```
-
-```{r}
-
-
-
-
+```{r fig.height=4, fig.width=6}
+week_predictions %>% 
+  mutate(interval60 = map(data, pull, interval60)) %>%
+  dplyr::select(interval60, Observed, Prediction, Regression) %>%
+  unnest() %>%
+  gather(Variable, Value, -Regression, -interval60) %>%
+    group_by(Regression, Variable, interval60) %>%
+    summarize(Value = mean(Value,na.rm=T)) %>%
+    ggplot(aes(interval60, Value, colour=Variable)) + 
+      geom_line(size = .8) + 
+      facet_wrap(~Regression, ncol=1) +
+      scale_colour_manual(values = p2) +
+      labs(title = "Mean Predicted/Observed bike share by hourly interval", 
+           x = "Hour", y= "Bikeshare Trips") +
+      plotTheme()
 ```
 
 
