@@ -158,12 +158,12 @@ sundays <-
   filter(sunday != 0) 
 
 parking.time.panel.sum%>%
-  filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-16 00:00:00")%>%
+  filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-30 00:00:00")%>%
   group_by(interval60)%>%
   summarise(parking_time_in_60m = sum(parking_time_in_60m))%>%
   ggplot(aes(ymd_hms(interval60),parking_time_in_60m, colour = "red"))+
     geom_line()+
-  geom_vline(data = sundays, aes(xintercept = sunday))
+  geom_vline(data = sundays, aes(xintercept = which(levels(crazyfactor) == sunday)))
   
 parking.time.panel.sum%>%
   filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-16 00:00:00")%>%
@@ -384,7 +384,7 @@ ggplot(aes(key,value))+
 ```
 
 
-```{lag correlation r}
+```{r}
 plotData.lag <-
   as.data.frame(park.engineer)%>%
   dplyr::select(starts_with("lag"), parking_time_in_60m) %>%
