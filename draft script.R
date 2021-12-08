@@ -339,5 +339,9 @@ ggplot()+
        subtitle = "Philadelphia, October 8th - November 11st, 2019")+
   mapTheme()
 
+parking.time.panel.sum<-
+  parking.time.panel.sum%>%
+mutate(week = week(interval60),
+       dotw = wday(interval60, label=TRUE))
 
-
+  
