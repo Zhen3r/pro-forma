@@ -373,3 +373,64 @@ park.engineer <- park.engineer%>%
          is.weekend = interval60%>%wday(week_start=1)>=6,
          hour = interval60%>%hour()) %>% 
   ungroup()
+
+
+week_predictions %>%
+  dplyr::select(week, Regression, MAE) %>%
+  gather(Variable, MAE, -Regression, -week) %>%
+  mutate(
+    across(Regression,factor,levels=c("Weather_Time_model","Space_Time_model",
+                                      "Lag_Time_model","Time_Space_Lag_Weather_model"))
+  )%>%
+  ggplot(aes(week%>%as.factor(), MAE)) + 
+  geom_bar(aes(fill = Regression), position = "dodge", stat="identity") +
+  scale_fill_manual(values = p5[1:5]) +
+  labs(title = "Mean Absolute Errors by model specification and week",x="week") +
+  plotTheme()
+
+parking.time.panel.sum%>%
+  filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-30 00:00:00")%>%
+  group_by(interval60, status)%>%
+  summarise(parking_time_in_60m = sum(parking_time_in_60m))%>%
+  ggplot(aes(ymd_hms(interval60),parking_time_in_60m, colour = status))+
+  geom_line()+
+  geom_vline(data = sundays, aes(xintercept = sunday))+
+  scale_colour_manual(values = p2)+
+  labs(title="Total Parking Time by week in SF: September 2021",
+       x="Day", y="Total Parking Time") +
+  plotTheme() + theme(panel.grid.major = element_blank())
+
+week_predictions %>% 
+  mutate(interval60 = map(data, pull, interval60)) %>%
+  dplyr::select(interval60, Observed, Prediction, Regression) %>%
+  unnest() %>%
+  gather(Variable, Value, -Regression, -interval60) %>%
+  group_by(Regression, Variable, interval60) %>%
+  summarize(Value = mean(Value,na.rm=T)) %>%
+  ungroup%>%
+  mutate(
+    across(Regression,factor,levels=c("Weather_Time_model","Space_Time_model",
+                                      "Lag_Time_model","Time_Space_Lag_Weather_model"))
+  )%>%
+  ggplot(aes(interval60, Value, colour=Variable)) + 
+  geom_line(size = .8) + 
+  facet_wrap(~Regression, ncol=1) +
+  scale_colour_manual(values = p2) +
+  labs(title = "Mean Predicted/Observed AParking Time by hourly interval", 
+       x = "Hour", y= "Parking Time") +
+  plotTheme()
+
+
+error.byWeek <-
+  filter(week_predictions, Regression == "Time_Space_Lag_Weather_model") %>% 
+  unnest() %>% st_sf() %>%
+  dplyr::select(street.id, Absolute_Error, week, geometry) %>%
+  gather(Variable, Value, -street.id, -week, -geometry) %>%
+  group_by(Variable, street.id, week) %>%
+  summarize(MAE = mean(Value), na.rm=TRUE)%>%
+  ungroup()%>%
+  ggplot()+
+  geom_sf(aes(color=MAE),
+          fill = "transparent", alpha=0.6, size=0.2)+
+  geom_sf(data = sf_neighborhood)+
+  facet_grid(~week)

@@ -40,6 +40,8 @@ library(hms)
 
 library(caret)
 
+library(stargazer)
+
 options(scipen=999)
 options(tigris_class = "sf")
 options(tigris_use_cache = TRUE)
@@ -82,7 +84,7 @@ meter_trans = read.csv("./data/meter_trans_2021-09.csv")%>%
     parking_time = as.numeric(ymd_hms(session_end_dt)-ymd_hms(session_start_dt)))%>%
   filter(parking_time>0)
 
-meters = st_read("./data/meters.geojson")%>%
+meters = st_read("/Users/inordia/Desktop/UPenn搞起来/592/pro-forma/data/Parking Meters.geojson")%>%
   select(post_id, ms_space_num, on_offstreet_type, active_meter_flag, meter_type,
          street_id, street_seg_ctrln_id, longitude, latitude, geometry)%>%
   st_transform(crs)%>%
@@ -91,6 +93,9 @@ meters = st_read("./data/meters.geojson")%>%
     ms_space_num = as.numeric(ms_space_num),
     ms_space_num = if_else(ms_space_num==0,1,ms_space_num)
   )
+
+sf_neighborhood <-st_read("/Users/inordia/Desktop/UPenn搞起来/592/pro-forma/data/SF Find Neighborhoods.geojson")%>%
+  st_transform('EPSG:7131')
 ```
 
 Creating Parking Time Panel
@@ -153,7 +158,12 @@ parking.time.panel.sum%>%
 
 parking.time.panel.sum<-
   parking.time.panel.sum%>%
-  mutate(status = ifelse(week<= 38, "train", "test"))
+mutate(week = week(interval60),
+       dotw = wday(interval60, label=TRUE))
+
+parking.time.panel.sum<-
+  parking.time.panel.sum%>%
+  mutate(status = ifelse(week <= 37, "train", "test"))
 
 sundays <- 
   mutate(parking.time.panel.sum,
@@ -308,10 +318,6 @@ parking_seg_census <-
 park.engineer = parking.time.panel.sum%>%
   left_join(parking_seg_census,by="street_seg_ctrln_id")
 
-weather.Panel$interval60<- as.character(weather.Panel$interval60)
-
-park.engineer <- park.engineer%>%
-  left_join(weather.Panel, by = "interval60")
 ```
 
 adding Time Lag + time dummy
@@ -537,6 +543,10 @@ week_predictions <- week_predictions %>%
 week_predictions %>%
   dplyr::select(week, Regression, MAE) %>%
   gather(Variable, MAE, -Regression, -week) %>%
+  mutate(
+    across(Regression,factor,levels=c("Weather_Time_model","Space_Time_model",
+                                    "Lag_Time_model","Time_Space_Lag_Weather_model"))
+  )%>%
   ggplot(aes(week%>%as.factor(), MAE)) + 
     geom_bar(aes(fill = Regression), position = "dodge", stat="identity") +
     scale_fill_manual(values = p5[1:5]) +
@@ -554,6 +564,24 @@ set.seed(1)
 reg.cv = caret::train(formula4, data = park.engineer, 
      method = "lm", trControl = fitControl, na.action = na.pass)
 summary(reg.cv)
+
+reg.cv <-reg.cv%>%
+  dplyr::select(cvID = street.id, parking_time_in_60m, Prediction)
+
+reg.summary <- mutate(reg.cv, Error = Prediction - parking_time_in_60m,
+                      Regression = "random k-fold cross validation on the 5 week panel")
+
+error_by_reg_and_fold <- 
+  reg.summary %>%
+  group_by(Regression, cvID) %>% 
+  summarize(Mean_Error = mean(Prediction - Trip_Count, na.rm = T),
+            MAE = mean(abs(Mean_Error), na.rm = T),
+            SD_MAE = mean(abs(Mean_Error), na.rm = T)) %>%
+  ungroup()
+error_by_reg_and_fold.long <-
+  error_by_reg_and_fold%>%
+  gather(Vriable, Value, -cvID, -Regression)%>%
+  unnest()
 ```
 
 
@@ -565,6 +593,11 @@ week_predictions %>%
   gather(Variable, Value, -Regression, -interval60) %>%
     group_by(Regression, Variable, interval60) %>%
     summarize(Value = mean(Value,na.rm=T)) %>%
+  ungroup%>%
+  mutate(
+    across(Regression,factor,levels=c("Weather_Time_model","Space_Time_model",
+                                    "Lag_Time_model","Time_Space_Lag_Weather_model"))
+  )%>%
     ggplot(aes(interval60, Value, colour=Variable)) + 
       geom_line(size = .8) + 
       facet_wrap(~Regression, ncol=1) +
@@ -572,6 +605,21 @@ week_predictions %>%
       labs(title = "Mean Predicted/Observed bike share by hourly interval", 
            x = "Hour", y= "Bikeshare Trips") +
       plotTheme()
+```
+
+```{r}
+error.byWeek <-
+  filter(week_predictions, Regression == "Time_Space_Lag_Weather_model") %>% 
+  unnest() %>% st_sf() %>%
+  dplyr::select(street.id, Absolute_Error, week, geometry) %>%
+  gather(Variable, Value, -street.id, -week, -geometry) %>%
+  group_by(Variable, street.id, week) %>%
+  summarize(MAE = mean(Value), na.rm=TRUE)%>%
+  ggplot()+
+  geom_sf(aes(color=MAE),
+          fill = "transparent", alpha=0.6, size=0.2)+
+  geom_sf(data = sf_neighborhood)+
+  facet_grid(~week)
 ```
 
 
