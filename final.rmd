@@ -166,7 +166,7 @@ sundays <-
   mutate(sunday = as.POSIXct(sunday))
 
 parking.time.panel.sum%>%
-  filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-30 00:00:00")%>%
+  filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-30 23:59:59")%>%
   group_by(interval60, status)%>%
   summarise(parking_time_in_60m = sum(parking_time_in_60m))%>%
   ggplot(aes(ymd_hms(interval60),parking_time_in_60m, colour = status))+
@@ -178,7 +178,7 @@ parking.time.panel.sum%>%
   plotTheme() + theme(panel.grid.major = element_blank())
   
 parking.time.panel.sum%>%
-  filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-30 00:00:00")%>%
+  filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-30 23:59:59")%>%
   filter(street_seg_ctrln_id == "1363000")%>%
   ggplot(aes(ymd_hms(interval60),parking_time_in_60m, colour = "red"))+
     geom_line()+
@@ -451,22 +451,40 @@ park.engineer <-park.engineer%>%
                             ymd_hms(paste0('1970-01-01',str_sub(interval60, 12)))%within% int.overnight ~ "Overnight"))
 
 park.engineer.map = park.engineer %>%
-  group_by(interval60, street.id, period) %>%
+  group_by(street.id, period) %>%
   summarize(mean_time = mean(parking_time_in_60m))%>%
   ungroup()%>%
-  left_join(park.engineer)%>%
+  left_join(meters.bySegId,by = c("street.id"="street_seg_ctrln_id"))%>%
   mutate(across(period, factor, levels=c("Overnight","AM","Mid_Day","PM","Night"))) %>%
   st_sf()
 map.lables = qBr(park.engineer.map,"mean_time")
 
 park.engineer.map%>%
+  filter(period=="Mid_Day")%>%#sample_n(10000)%>%
 ggplot()+
   geom_sf(data = sf_neighborhood, fill="#cccccc", color="#999999")+
   geom_sf(aes(color=mean_time,size=mean_time,alpha=mean_time),
-           stroke = .5, shape = 16)+
+           stroke = .2, shape = 16)+
   viridis::scale_color_viridis(option = "C")+
-  scale_size_continuous(range = c(0.3,2))+
-  scale_alpha_continuous(range = c(0.2,0.8))+
+  scale_size_continuous(range = c(0.2,4))+
+  scale_alpha_continuous(range = c(0.5,1))+
+  labs(title="Mean Parking Time of Street Segments by Time",
+       subtitle = "San Francisco, 2021.9")+
+  mapTheme()
+
+park.engineer.map%>%
+  filter(mean_time>0)%>%
+  sample_n(10000)%>%
+ggplot()+
+  geom_sf(data = sf_neighborhood, fill="#cccccc", color="#999999")+
+  geom_sf(data=park.engineer.map%>%filter(mean_time==0),
+          aes(color=rev(q5(mean_time)),size=0.2,alpha=0.1),
+          stroke = .4, shape = 16)+
+  geom_sf(aes(color=rev(q5(mean_time)),size=mean_time,alpha=mean_time),
+          stroke = .6, shape = 16)+
+  scale_color_manual(values=p5,labels=qBr(park.engineer.map,"mean_time"))+
+  scale_size_continuous(range = c(0.4,2))+
+  scale_alpha_continuous(range = c(0.3,0.6))+
   facet_wrap(~period,nrow=2)+
   labs(title="Mean Parking Time of Street Segments by Time",
        subtitle = "San Francisco, 2021.9")+
@@ -567,7 +585,7 @@ week_predictions %>%
 ## 5. Validate your model with cross-validation and describe how your predictions are useful (accuracy vs. generalizability).
 ```{r}
 # cross-validation
-fitControl <- caret::trainControl(method = "cv", number = 30)
+fitControl <- caret::trainControl(method = "cv", number = 50,savePredictions=T)
 set.seed(1)
 reg.cv = caret::train(formula4, data = park.engineer, 
      method = "lm", trControl = fitControl, na.action = na.pass)
@@ -583,6 +601,9 @@ week_predictions %>%
   gather(Variable, Value, -Regression, -interval60) %>%
     group_by(Regression, Variable, interval60) %>%
     summarize(Value = mean(Value,na.rm=T)) %>%
+    mutate(across(Regression, factor, 
+                  levels=c("Weather_Time_model","Space_Time_model",
+                           "Lag_Time_model","Time_Space_Lag_Weather_model"))) %>%
     ggplot(aes(interval60, Value, colour=Variable)) + 
       geom_line(size = .8) + 
       facet_wrap(~Regression, ncol=1) +
@@ -591,15 +612,57 @@ week_predictions %>%
            x = "Hour", y= "Bikeshare Trips") +
       plotTheme()
 ```
-
-
-## 6. Provide additional maps and data visualizations to show that your model is useful.
 ```{r}
 
+mae_map = filter(week_predictions, Regression == "Time_Space_Lag_Weather_model") %>% 
+  unnest()%>%st_sf() %>%
+  dplyr::select(street.id, Absolute_Error, geometry) %>%
+  group_by(street.id) %>%
+  summarize(MAE = mean(Absolute_Error, na.rm=TRUE))
 
+# mae_map_nbh = mae_map%>%
+#   st_join(sf_neighborhood)%>%
+#   group_by(name)%>%
+#   st_drop_geometry()%>%
+#   right_join(sf_neighborhood)%>%
+#   st_sf()
+  
+ggplot(mae_map%>%drop_na(MAE)%>%st_sf())+
+  geom_sf(data = sf_neighborhood, fill="#cccccc", color="#999999")+
+  geom_sf(aes(color=q5(MAE)),stroke=0.5,size=0.5)+
+  scale_color_manual(values=p5,labels=qBr(mae_map_nbh,"MAE"),
+                     name="MAE(Quantile)")+
+  labs(title="Spatial Distribution o")+
+  mapTheme()
 
+parking_seg_census$spots_num_census%>%
+  mean()
 
 ```
+
+```{r}
+reg.summary <-reg.cv$pred%>%
+  select(foldNum = Resample,pred,obs)%>%
+  mutate(AE = abs(pred-obs),
+         APE = abs(pred-obs)/obs)%>%
+  group_by(foldNum)%>%
+  summarise(MAE = mean(AE,na.rm=T),
+            SD_MAE = sd(AE,na.rm=T))
+
+reg.summary %>%
+  pivot_longer(-foldNum)%>%
+  ggplot(aes(value))+
+  geom_histogram(colour="black", fill = p5[4])+
+  facet_wrap(~name,scale='free')+
+  labs(title="Distribution of MAE",
+       subtitle = "50-fold cross-validation")+
+  plotTheme()
+  
+
+```
+
+## 6. Provide additional maps and data visualizations to show that your model is useful.
+
 
 
 
