@@ -147,11 +147,11 @@ parking.time.panel.sum = parking.time.panel%>%
   summarise(parking_time_in_60m = sum(parking_time_in_60m))
 parking.time.panel.sum
 
-parking.time.panel.sum%>%
-  group_by(interval60)%>%
-  summarise(parking_time_in_60m = sum(parking_time_in_60m))%>%
-  ggplot()+
-    geom_col(aes(ymd_hms(interval60),parking_time_in_60m))
+# parking.time.panel.sum%>%
+#   group_by(interval60)%>%
+#   summarise(parking_time_in_60m = sum(parking_time_in_60m))%>%
+#   ggplot()+
+#     geom_col(aes(ymd_hms(interval60),parking_time_in_60m))
 
 parking.time.panel.sum<-
   parking.time.panel.sum%>%
@@ -184,12 +184,12 @@ parking.time.panel.sum%>%
        x="Day", y="Total Parking Time") +
   plotTheme() + theme(panel.grid.major = element_blank())
   
-parking.time.panel.sum%>%
-  filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-30 23:59:59")%>%
-  filter(street_seg_ctrln_id == "1363000")%>%
-  ggplot(aes(ymd_hms(interval60),parking_time_in_60m, colour = "red"))+
-    geom_line()+
-   geom_vline(data = sundays, aes(xintercept = sunday))
+# parking.time.panel.sum%>%
+#   filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-30 23:59:59")%>%
+#   filter(street_seg_ctrln_id == "1363000")%>%
+#   ggplot(aes(ymd_hms(interval60),parking_time_in_60m, colour = "red"))+
+#     geom_line()+
+#    geom_vline(data = sundays, aes(xintercept = sunday))
   
 ```
 
@@ -338,55 +338,9 @@ park.engineer = park.engineer%>%
          is.weekend = interval60%>%wday(week_start=1)>=6,
          hour = interval60%>%hour()) %>% 
  ungroup()
-
-
 ```
 
-adding Parking fee
-```{r}
-fee = st_read("./data/rate.geojson")%>%st_transform(crs)
-fee.geom = fee%>%
-  group_by(old)%>%
-  summarise(geometry2=st_union(geometry)) %>% 
-  mutate(geometry2=st_centroid(geometry2)) %>%
-  filter(!st_is_empty(.))
-  
-  
-v(fee)
 
-street.geom = read.csv("data/On-Street_Parking_Census.csv")%>%
-  st_as_sf(wkt="shape",crs=4326)%>%
-  st_transform(crs) %>% 
-  select(street.id = CNN)
-nn_function
-
-nn.result = nngeo::st_nn(fee.geom$geometry2, street.geom$shape,k=1,returnDist=T)
-fee.geom = fee.geom%>%mutate(
-  nn.index = nn.result$nn%>%as.numeric(),
-  nn.distance = nn.result$dist%>%as.numeric(),
-)
-
-street.geom = street.geom%>%
-  mutate(index = row_number())
-fee.geom %>% 
-  as.data.frame() %>% 
-  left_join(street.geom,by=c("nn.index"="index")) %>% 
-  st_sf()
-```
-
-adding Parking time limits
-```{r}
-
-
-
-```
-
-nn parking Citations
-```{r}
-
-
-
-```
 
 Weather
 ```{r}
@@ -413,6 +367,18 @@ park.engineer = park.engineer%>%
 ```
 
 ## 3. exploratory analysis  using maps and plots
+
+```{r}
+park.engineer %>% 
+  select(parking_time_in_60m) %>% 
+  ggplot(aes(parking_time_in_60m))+
+    geom_histogram()
+
+```
+
+
+
+
 
 Meter Inconsistency Visualization
 ```{r}
@@ -567,13 +533,18 @@ reg2 <- lm(formula2, data=park.Train)
 reg3 <- lm(formula3, data=park.Train)
 reg4 <- lm(formula4, data=park.Train)
 
+reg.pos = glm(formula4, data=park.Train,family = poisson(link = "log"))
+
 summary(reg1)
 summary(reg2)
 summary(reg3)
 summary(reg4)
+summary(reg.pos)
 
 stargazer(reg1, reg2, reg3, reg4, type ="text", font.size = "small", single.row = TRUE)
 stargazer(reg4, type ="text", font.size = "small", single.row = TRUE)
+
+# jtools::plot_summs(reg.pos)
 ```
 
 ```{r}
@@ -589,7 +560,8 @@ week_predictions <-
     mutate(Weather_Time_model = map(.x = data, fit = reg1, .f = model_pred),
            Space_Time_model = map(.x = data, fit = reg2, .f = model_pred),
            Lag_Time_model = map(.x = data, fit = reg3, .f = model_pred),
-           Time_Space_Lag_Weather_model = map(.x = data, fit = reg4, .f = model_pred))
+           Time_Space_Lag_Weather_model = map(.x = data, fit = reg4, .f = model_pred),
+           Poission_model = map(.x = data, fit = reg.pos, .f = model_pred))
 
 mean.na = function(x) {mean(x,na.rm=T)}
 sd.na = function(x) {sd(x,na.rm=T)}
@@ -732,12 +704,48 @@ reg.summary %>%
 
 ```
 
-## 6. Provide additional maps and data visualizations to show that your model is useful.
 
 
+adding Parking fee
+```{r}
+fee = st_read("./data/rate.geojson")%>%st_transform(crs)
+fee.geom = fee%>%
+  group_by(old)%>%
+  summarise(geometry2=st_union(geometry)) %>% 
+  mutate(geometry2=st_centroid(geometry2)) %>%
+  filter(!st_is_empty(.))
+  
+street.geom = read.csv("data/On-Street_Parking_Census.csv")%>%
+  st_as_sf(wkt="shape",crs=4326)%>%
+  st_transform(crs) %>% 
+  select(street.id = CNN)%>%
+  mutate(index = row_number())
 
+nn.result = nngeo::st_nn(fee.geom$geometry2, street.geom$shape,k=1,returnDist=T)
 
+fee.geom = fee.geom%>%mutate(
+  nn.index = nn.result$nn%>%as.numeric(),
+  nn.distance = nn.result$dist%>%as.numeric(),
+) %>% 
+  as.data.frame() %>% 
+  left_join(street.geom,by=c("nn.index"="index")) %>% 
+  st_sf()%>%
+  filter(nn.distance<100)
 
+fee.geom$street.id.x%>%unique()%>%length()
+fee.geom%>%nrow()
+fee.results = fee.geom%>%
+  st_drop_geometry() %>% 
+  group_by(street.id.x) %>% 
+  summarise(old=first(old)) %>% 
+  right_join(fee,by="old")%>% 
+  select(
+    -streets, -old, -STREET_NAME, -new,
+    street.id = street.id.x
+  )
+
+fee.results 
+```
 
 ## 7. Discussion
 
