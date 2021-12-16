@@ -584,7 +584,7 @@ week_predictions %>%
   )%>%
   ggplot(aes(week%>%as.factor(), MAE)) + 
     geom_bar(aes(fill = Regression), position = "dodge", stat="identity") +
-    scale_fill_manual(values = p5[1:5]) +
+    scale_fill_manual(values = plasma(8)[2:6]) +
     labs(title = "Mean Absolute Errors by model specification and week",x="week") +
   plotTheme()
 
