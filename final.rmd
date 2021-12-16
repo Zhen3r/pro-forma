@@ -533,13 +533,15 @@ reg2 <- lm(formula2, data=park.Train)
 reg3 <- lm(formula3, data=park.Train)
 reg4 <- lm(formula4, data=park.Train)
 
-reg.pos = glm(formula4, data=park.Train,family = poisson(link = "log"))
+reg.pos = glm(formula4, data=park.Train,family = "poisson",na.action = na.omit)
+# cost=function(x,y) mean(abs(x-y),na.rm=T)
+# reg.pos.cv = boot::cv.glm(park.Train,reg.pos,K=2,cost = cost)
 
-summary(reg1)
-summary(reg2)
-summary(reg3)
-summary(reg4)
-summary(reg.pos)
+# summary(reg1)
+# summary(reg2)
+# summary(reg3)
+# summary(reg4)
+# summary(reg.pos)
 
 stargazer(reg1, reg2, reg3, reg4, type ="text", font.size = "small", single.row = TRUE)
 stargazer(reg4, type ="text", font.size = "small", single.row = TRUE)
@@ -577,7 +579,7 @@ week_predictions %>%
   dplyr::select(week, Regression, MAE) %>%
   gather(Variable, MAE, -Regression, -week) %>%
   mutate(
-    across(Regression,factor,levels=c("Weather_Time_model","Space_Time_model",
+    across(Regression,factor,levels=c("Weather_Time_model","Space_Time_model","Poission_model",
                                     "Lag_Time_model","Time_Space_Lag_Weather_model"))
   )%>%
   ggplot(aes(week%>%as.factor(), MAE)) + 
