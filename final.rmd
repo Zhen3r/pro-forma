@@ -443,7 +443,31 @@ parking.time.panel.sum %>%
   plotTheme()
 
 ```
-
+```{r fig.height=4, fig.width=8}
+plotData.lag <-
+  as.data.frame(park.engineer)%>%
+  dplyr::select(starts_with("lag"), parking_time_in_60m) %>%
+  gather(Variable, Value, -parking_time_in_60m) %>%
+  mutate(Variable = fct_relevel(Variable, "lagHour","lag2Hours","lag3Hours",
+                                "lag4Hours","lag12Hours","lag1day"))
+correlation.lag <-
+  group_by(plotData.lag, Variable) %>%
+  summarize(correlation = round(cor(Value, parking_time_in_60m, use = "complete.obs"), 2)) #%>%
+#   kable(caption = "Parking Time in One Hour") %>%
+#   kable_styling("striped", full_width = F)
+# 
+# correlation.lag
+plotData.lag%>%sample_n(100000)%>%
+ggplot(aes(Value, parking_time_in_60m)) +
+  geom_point(size = 0.1) +
+  geom_text(data = correlation.lag, 
+            aes(label = paste("r =", round(correlation, 2))),
+            x=-Inf, y=Inf, vjust = 1.5, hjust = -.1,size=5) +
+  geom_smooth(method = "lm", se = FALSE, colour = p5[3]) +
+  facet_wrap(~Variable, nrow = 2, scales = "free") +
+  labs(title = "") +
+  plotTheme()
+```
 
 
 ### 3.2 Spatial Process of Depandent Variable
@@ -483,8 +507,32 @@ animation =
 # animate(animation, duration=20, renderer = gifski_renderer())
 anim_save("./pic/ani.gif", height = 800, width =800, animation, duration=4, renderer = gifski_renderer())
 ```
-
 ![](./pic/ani.gif)
+
+
+```{r fig.height=6, fig.width=12}
+park.engineer.map = park.engineer %>%
+  group_by(street.id, dotw) %>%
+  summarize(mean_time = mean(parking_time_in_60m))%>%
+  ungroup()%>%
+  left_join(parking_seg_census,by = c("street.id"="street_seg_ctrln_id"))%>%
+  st_sf()
+
+map.lables = qBr(park.engineer.map,"mean_time")
+
+ggplot()+
+  geom_sf(data = sf_neighborhood, fill="#cccccc", color="#999999")+
+  geom_sf(data= park.engineer.map, 
+          aes(color=mean_time,size=mean_time,alpha=mean_time),
+          stroke = .5, shape = 16)+
+  viridis::scale_color_viridis(option = "C")+
+  scale_size_continuous(range = c(0.5,4))+
+  scale_alpha_continuous(range = c(0.5,1))+
+  facet_wrap(~dotw,nrow=2) +
+  labs(title="Mean Parking Time of Street Segments by Day",
+       subtitle = "San Francisco, 2021.9")+
+  mapTheme()
+```
 
 nn
 
@@ -502,6 +550,28 @@ parking_seg_census%>%
     labs(title='Distribution of Nearest Neighbor Variables',
          subtitle = 'San Francisco, 2021.9', x="")
 ```
+
+```{r}
+mapdata = parking_seg_census%>%
+  select(-spots_num_census,-street_seg_ctrln_id) %>% 
+  mutate_at(ends_with(".nn")%>%vars()%>%all_of(),log) %>% 
+  pivot_longer(ends_with(".nn")) %>% 
+  filter(name=="transit.nn")%>%
+  mutate(name=as.factor(1))%>%
+  st_sf()
+
+ggplot(mapdata)+
+  geom_sf(data = sf_neighborhood, fill="#cccccc", color="#999999")+
+  geom_sf(aes(color=value),
+          stroke = .5, shape = 16)+
+  viridis::scale_color_viridis(option = "C")+
+  facet_wrap(~name) +
+  labs(title="Logged Nearest Neighbor Variables",
+       subtitle = "San Francisco, 2021.9")+
+  mapTheme()
+```
+
+
 
 Corr
 
@@ -589,7 +659,7 @@ week_predictions %>%
 
 ```{r}
 # cross-validation
-fitControl <- caret::trainControl(method = "cv", number = 50,savePredictions=T)
+fitControl <- caret::trainControl(method = "cv", number = 2,savePredictions=T)
 set.seed(1)
 reg.cv = caret::train(formula4, data = park.engineer, 
      method = "lm", trControl = fitControl, na.action = na.pass)
@@ -601,37 +671,37 @@ reg.cv <-reg.cv%>%
 reg.summary <- mutate(reg.cv, Error = Prediction - parking_time_in_60m,
                       Regression = "random k-fold cross validation on the 5 week panel")
 
-error_by_reg_and_fold <- 
-  reg.summary %>%
-  group_by(Regression, cvID) %>% 
-  summarize(Mean_Error = mean(Prediction - Trip_Count, na.rm = T),
-            MAE = mean(abs(Mean_Error), na.rm = T),
-            SD_MAE = mean(abs(Mean_Error), na.rm = T)) %>%
-  ungroup()
-error_by_reg_and_fold.long <-
-  error_by_reg_and_fold%>%
-  gather(Vriable, Value, -cvID, -Regression)%>%
-  unnest()
+# error_by_reg_and_fold <- 
+#   reg.summary %>%
+#   group_by(Regression, cvID) %>% 
+#   summarize(Mean_Error = mean(Prediction - Trip_Count, na.rm = T),
+#             MAE = mean(abs(Mean_Error), na.rm = T),
+#             SD_MAE = mean(abs(Mean_Error), na.rm = T)) %>%
+#   ungroup()
+# error_by_reg_and_fold.long <-
+#   error_by_reg_and_fold%>%
+#   gather(Vriable, Value, -cvID, -Regression)%>%
+#   unnest()
 ```
 
 ```{r fig.height=4, fig.width=6}
-week_predictions %>% 
-  mutate(interval60 = map(data, pull, interval60)) %>%
-  dplyr::select(interval60, Observed, Prediction, Regression) %>%
-  unnest() %>%
-  gather(Variable, Value, -Regression, -interval60) %>%
-    group_by(Regression, Variable, interval60) %>%
-    summarize(Value = mean(Value,na.rm=T)) %>%
-    mutate(across(Regression, factor, 
-                  levels=c("Weather_Time_model","Space_Time_model",
-                           "Lag_Time_model","Time_Space_Lag_Weather_model"))) %>%
-    ggplot(aes(interval60, Value, colour=Variable)) + 
-      geom_line(size = .8) + 
-      facet_wrap(~Regression, ncol=1) +
-      scale_colour_manual(values = p2) +
-      labs(title = "Mean Predicted/Observed bike share by hourly interval", 
-           x = "Hour", y= "Bikeshare Trips") +
-      plotTheme()
+# week_predictions %>% 
+#   mutate(interval60 = map(data, pull, interval60)) %>%
+#   dplyr::select(interval60, Observed, Prediction, Regression) %>%
+#   unnest() %>%
+#   gather(Variable, Value, -Regression, -interval60) %>%
+#     group_by(Regression, Variable, interval60) %>%
+#     summarize(Value = mean(Value,na.rm=T)) %>%
+#     mutate(across(Regression, factor, 
+#                   levels=c("Weather_Time_model","Space_Time_model",
+#                            "Lag_Time_model","Time_Space_Lag_Weather_model"))) %>%
+#     ggplot(aes(interval60, Value, colour=Variable)) + 
+#       geom_line(size = .8) + 
+#       facet_wrap(~Regression, ncol=1) +
+#       scale_colour_manual(values = p2) +
+#       labs(title = "Mean Predicted/Observed bike share by hourly interval", 
+#            x = "Hour", y= "Bikeshare Trips") +
+#       plotTheme()
 ```
 
 ```{r}
@@ -671,7 +741,7 @@ ggplot(mae_map%>%drop_na(MAE)%>%st_sf())+
   geom_sf(aes(color=q5(MAE)),stroke=0.5,size=0.5)+
   scale_color_manual(values=p5,labels=qBr(mae_map_nbh,"MAE"),
                      name="MAE(Quantile)")+
-  labs(title="Spatial Distribution o")+
+  labs(title="Spatial Distribution of MAE")+
   mapTheme()
 
 parking_seg_census$spots_num_census%>%
