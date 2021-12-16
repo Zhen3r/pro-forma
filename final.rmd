@@ -58,20 +58,14 @@ crs = 7131
 
 ## 1. Introduction
 
-Motivate the analysis – “What is the use case; why would someone want to replicate your analysis and why would they use this approach?”
+Motivate the analysis -- "What is the use case; why would someone want to replicate your analysis and why would they use this approach?"
 
-Parking fee?
-https://data.sfgov.org/Transportation/Meter-Rate-Schedules/fwjv-32uk
-
-Parking time limits (from ? to ? / up to ? hours)
-https://data.sfgov.org/Transportation/Parking-regulations-except-non-metered-color-curb-/hi6h-neyh
-
-
-https://www.way.com/parking//37.7879938/-122.4074374/Union-Square/
+<https://www.way.com/parking//37.7879938/-122.4074374/Union-Square/>
 
 ## 2. Data
 
 Meters data
+
 ```{r}
 meter_trans = read.csv("./data/meter_trans_2021-09.csv")%>%
   mutate(
@@ -96,6 +90,7 @@ sf_neighborhood <-st_read("./data/SF Find Neighborhoods.geojson")%>%
 ```
 
 Creating Parking Time Panel
+
 ```{r eval=FALSE}
 parking.time.panel =
   expand.grid(interval60 = unique(weather.Panel$interval60), 
@@ -106,6 +101,7 @@ parking.time.panel =
 ```
 
 Processing Parking Time Panel
+
 ```{python eval=FALSE}
 """
 The function below is used to union the parking time windows of each meter 
@@ -136,7 +132,10 @@ for rowNumber in range(meterTrans.shape[0]):
       start_time = this_end
 ```
 
+![](pic/1.png)
+
 Loading Processed Parking Time Panel
+
 ```{r}
 parking.time.panel = read.csv("./data/parking_spot_panel.csv")
 
@@ -194,6 +193,7 @@ parking.time.panel.sum%>%
 ```
 
 Create parking census
+
 ```{r}
 parking_census <- read.csv("data/On-Street_Parking_Census.csv")%>%
   select(CNN, PRKG_SPLY)
@@ -213,6 +213,7 @@ parking_seg_census <- parking_seg_census%>%
 ```
 
 City amenities data
+
 ```{r}
 transit <- st_read("data/Muni Stops.geojson")%>%
   st_transform(crs)
@@ -242,6 +243,7 @@ parking_seg_census <-
 ```
 
 OSM data
+
 ```{r}
 ## OSM Data
 
@@ -322,6 +324,7 @@ park.engineer = parking.time.panel.sum%>%
 ```
 
 adding Time Lag + time dummy
+
 ```{r}
 park.engineer = park.engineer%>%
   rename(street.id = street_seg_ctrln_id)%>%
@@ -340,9 +343,8 @@ park.engineer = park.engineer%>%
  ungroup()
 ```
 
-
-
 Weather
+
 ```{r}
 weather.SF <- 
   riem_measures(station = "SFO", date_start = "2021-09-01", date_end = "2021-10-01")
@@ -366,33 +368,47 @@ park.engineer = park.engineer%>%
   drop_na(Temperature) # to remove data on OCT.01
 ```
 
-## 3. exploratory analysis  using maps and plots
+## 3. exploratory analysis using maps and plots
+
+```{r}
+parking.time.panel %>% 
+  ggplot(aes(parking_time_in_60m))+
+    geom_histogram(bins=30, fill = p5[3], color="white") +
+    plotTheme()+
+    scale_y_log10()+
+    labs(title="Histogram of Parking Time in Seconds",
+         subtitle = 'By Meter, SF, 2020.9', y='log(count)')
+```
+
 
 ```{r}
 park.engineer %>% 
   select(parking_time_in_60m) %>% 
   ggplot(aes(parking_time_in_60m))+
-    geom_histogram()
-
+    geom_histogram(bins=50, fill = p5[3]) +
+    plotTheme()+
+    labs(title="Histogram of Parking Time in Seconds",
+         subtitle = 'Aggregated By Street Segments, SF, 2020.9')
 ```
 
 
 
 
+Meter Activeness
 
-Meter Inconsistency Visualization
 ```{r}
-meter.notfound = setdiff(unique(meter_trans$post_id),unique(meters$post_id))%>%length()
 meter.inactive = setdiff(unique(meters$post_id),unique(meter_trans$post_id))%>%length()
 meter.intersection = intersect(unique(meters$post_id),unique(meter_trans$post_id))%>%length()
 data.frame("meter.inactive"=meter.inactive,
-           "meter.notfound"=meter.notfound,
-           "meter.intersection"=meter.intersection)%>%
+           "meter.active"=meter.intersection)%>%
   gather()%>%
-ggplot(aes(key,value))+
-  geom_col()
+  ggplot(aes(key,value))+
+    geom_col(fill=p5[3:4])+
+    plotTheme()+
+    labs(title="Meter Activeness, SF, 2020.9",
+         subtitle = 'Inactive: meters that are not in Transaction Dataset',
+         x="", y ="Count")
 ```
-
 
 ```{r}
 plotData.lag <-
@@ -426,12 +442,13 @@ parking.time.panel.sum <-parking.time.panel.sum%>%
 
 
 parking.time.panel.sum %>%
+  mutate(across(period, factor, levels=c("Overnight","AM","Mid_Day","PM","Night"))) %>%
   group_by(interval60, street_seg_ctrln_id, period) %>%
   summarize(mean_time = mean(parking_time_in_60m))%>%
   ggplot()+
-  geom_histogram(aes(mean_time), binwidth = 10000)+
-  labs(title="Mean Number of Hourly Trips Per Station",
-       subtitle="Philadelphia, October 8th - November 11st, 2019",
+  geom_histogram(aes(mean_time), binwidth = 10000, fill=p5[3])+
+  labs(title="Mean Parking Time Per Street Segment",
+       subtitle="San Francisco, 2020.9",
        x="Mean Parking Time", 
        y="Frequency")+
   facet_wrap(~period)+
@@ -468,51 +485,33 @@ ggplot()+
   labs(title="Mean Parking Time of Street Segments by Time",
        subtitle = "San Francisco, 2021.9")+
   mapTheme()
-
-park.engineer.map%>%
-  filter(mean_time>0)%>%
-  sample_n(10000)%>%
-ggplot()+
-  geom_sf(data = sf_neighborhood, fill="#cccccc", color="#999999")+
-  geom_sf(data=park.engineer.map%>%filter(mean_time==0),
-          aes(color=rev(q5(mean_time)),size=0.2,alpha=0.1),
-          stroke = .4, shape = 16)+
-  geom_sf(aes(color=rev(q5(mean_time)),size=mean_time,alpha=mean_time),
-          stroke = .6, shape = 16)+
-  scale_color_manual(values=p5,labels=qBr(park.engineer.map,"mean_time"))+
-  scale_size_continuous(range = c(0.4,2))+
-  scale_alpha_continuous(range = c(0.3,0.6))+
-  facet_wrap(~period,nrow=2)+
-  labs(title="Mean Parking Time of Street Segments by Time",
-       subtitle = "San Francisco, 2021.9")+
-  mapTheme()
 ```
 
 nn
+
 ```{r fig.height=3, fig.width=8}
 parking_seg_census%>%
   pivot_longer(cols=ends_with(".nn"),names_to="name1",values_to="value_raw")%>%
   mutate(value_logged = log(value_raw))%>%
   pivot_longer(cols=starts_with("value"),names_to="if_log",values_to="name_log")%>%
+  mutate(across(if_log, factor, levels=c("value_raw","value_logged"))) %>%
   ggplot()+
     geom_histogram(aes(name_log),bins=50)+
     facet_wrap(if_log~name1,scales = "free",nrow=2)+
     plotTheme()
 ```
 
-
 Corr
+
 ```{r}
 
 ```
 
 ### 3.? What is the spatial or space/time process?
+
 ```{r}
 
 ```
-
-
-
 
 ## 4. Describe your modeling approach and show how you arrived at your final model.
 
@@ -590,8 +589,8 @@ week_predictions %>%
 
 ```
 
-
 ## 5. Validate your model with cross-validation and describe how your predictions are useful (accuracy vs. generalizability).
+
 ```{r}
 # cross-validation
 fitControl <- caret::trainControl(method = "cv", number = 50,savePredictions=T)
@@ -618,7 +617,6 @@ error_by_reg_and_fold.long <-
   gather(Vriable, Value, -cvID, -Regression)%>%
   unnest()
 ```
-
 
 ```{r fig.height=4, fig.width=6}
 week_predictions %>% 
@@ -655,8 +653,8 @@ error.byWeek <-
   facet_grid(~week)
 ```
 
-
 ## 6. Provide additional maps and data visualizations to show that your model is useful.
+
 ```{r}
 
 mae_map = filter(week_predictions, Regression == "Time_Space_Lag_Weather_model") %>% 
@@ -706,9 +704,8 @@ reg.summary %>%
 
 ```
 
-
-
 adding Parking fee
+
 ```{r}
 fee = st_read("./data/rate.geojson")%>%st_transform(crs)
 fee.geom = fee%>%
@@ -753,10 +750,4 @@ fee.results
 
 ### 7.1 Talk about how your analysis meets the use case you set out to address.
 
-
-
-
 ### 7.2 What could you do to make the analysis better?
-
-
-
