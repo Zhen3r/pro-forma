@@ -2,6 +2,8 @@
 # Smart Street - A Better and Cheaper Demand-Responsive Parking System
 ### Ran Wang, Zhenzhao Xu
 
+### [Youtube Video](https://youtu.be/jkliDXtwEgM)
+
 ## 1. Introduction
 
 Parking is a well-recognized issue in U.S. cities. Parking is severely underpriced; off-street parking rates seldom if ever take the external costs of parking into account and on-street parking rates hardly reflect the market price that matches demand with supply. The underpriced parking leads to the overuse of goods and encourages more driving that unavoidably result in negative externalities such as congestion and pollution. From a consumer’s perspective, the overuse of underpriced or even free parking resources also causes problems such as the difficulty of finding available parking spaces.
