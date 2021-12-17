@@ -13,7 +13,8 @@ editor_options:
   chunk_output_type: inline
 ---
 
-```{r}
+
+```r
 knitr::opts_chunk$set(
 	message = FALSE,
 	warning = FALSE,
@@ -23,7 +24,8 @@ knitr::opts_chunk$set(
 )
 ```
 
-```{r}
+
+```r
 library(tidyverse)
 library(tidycensus)
 library(sf)
@@ -75,7 +77,8 @@ Smart Street is a more attractive solution because it significantly **reduces th
 
 ### 2.1 Meters data
 
-```{r}
+
+```r
 meter_trans = read.csv("./data/meter_trans_2021-09.csv")%>%
   mutate(
     interval60 = floor_date(ymd_hms(session_start_dt), unit = "hour"),
@@ -106,7 +109,8 @@ https://data.sfgov.org/Transportation/SFMTA-Parking-Meter-Detailed-Revenue-Trans
 https://data.sfgov.org/Transportation/Parking-Meters/8vzz-qzz9 
 
 
-```{r}
+
+```r
 meter.inactive = setdiff(unique(meters$post_id),unique(meter_trans$post_id))%>%length()
 meter.intersection = intersect(unique(meters$post_id),unique(meter_trans$post_id))%>%length()
 data.frame("meter.inactive"=meter.inactive,
@@ -120,13 +124,16 @@ data.frame("meter.inactive"=meter.inactive,
          x="", y ="Count")
 ```
 
+<img src="final_files/figure-html/unnamed-chunk-4-1.png" style="display: block; margin: auto;" />
+
 
 
 ### 2.2 Creating Parking Time Panel
 
 In this project, time-space model is used to predict parking, thus, `parking.time.panel` is created with a time interval of ONE HOUR. Considering the use case - predictive parking rates, shorter time interval is unnecessary.
 
-```{r eval=FALSE}
+
+```r
 parking.time.panel =
   expand.grid(interval60 = unique(weather.Panel$interval60), 
               post_id = unique(meter_trans$post_id))%>%
@@ -136,7 +143,8 @@ parking.time.panel =
 
 ### 2.3 Processing Parking Time Panel
 
-```{python eval=FALSE}
+
+```python
 """
 The function below is used to union the parking time windows of each meter 
 and split the time windows into its panel.
@@ -178,7 +186,8 @@ Python is used to accelerate this process.
 
 ### 2.4 Loading Processed Parking Time Panel
 
-```{r}
+
+```r
 parking.time.panel = read.csv("./data/parking_spot_panel.csv")
 
 parking.time.panel.sum = parking.time.panel%>%
@@ -216,7 +225,8 @@ sundays <-
 
 ### 2.5 Loading Parking Census Data
 
-```{r}
+
+```r
 parking_census <- read.csv("data/On-Street_Parking_Census.csv")%>%
   select(CNN, PRKG_SPLY)
 parking_census$CNN <- as.character(parking_census$CNN)
@@ -242,7 +252,8 @@ https://data.sfgov.org/Transportation/On-Street-Parking-Census/9ivs-nf5y
 
 ### 2.6 City Amenities Data
 
-```{r}
+
+```r
 transit <- st_read("data/Muni Stops.geojson")%>%
   st_transform(crs)
 
@@ -282,7 +293,8 @@ https://data.sfgov.org/Culture-and-Recreation/Cultural-Districts/5xmc-5bjj
 
 ### 2.7 OSM data
 
-```{r}
+
+```r
 ## OSM Data
 
 sf_boundary <- st_read("data/Bay Area Counties.geojson")%>%
@@ -358,7 +370,6 @@ park.engineer = parking.time.panel.sum%>%
       # log all the nn vars
       mutate_at(ends_with(".nn")%>%vars()%>%all_of(),log),
     by="street_seg_ctrln_id")
-
 ```
 
 Data Source: 
@@ -367,7 +378,8 @@ https://www.openstreetmap.org/
 
 ### 2.8 Adding Time Lag + Time Dummy
 
-```{r}
+
+```r
 park.engineer = park.engineer%>%
   rename(street.id = street_seg_ctrln_id)%>%
   group_by(street.id) %>% 
@@ -390,7 +402,8 @@ To regress on space/time model, time lag from one hour to one week is included a
 
 ### 2.9 Weather
 
-```{r}
+
+```r
 weather.SF <- 
   riem_measures(station = "SFO", date_start = "2021-09-01", date_end = "2021-10-01")
 
@@ -414,7 +427,11 @@ grid.arrange(top = "Weather Data - SF - Dec, 2021",
     labs(title="Wind Speed", x="Hour", y="Wind Speed") + plotTheme(),
   ggplot(weather.Panel, aes(interval60,Temperature)) + geom_line(color=p5[2]) + 
     labs(title="Temperature", x="Hour", y="Temperature") + plotTheme())
+```
 
+<img src="final_files/figure-html/unnamed-chunk-12-1.png" style="display: block; margin: auto;" />
+
+```r
 park.engineer = park.engineer%>%
   mutate(interval60 = ymd_hms(interval60))%>%
   left_join(weather.Panel,by="interval60")%>%
@@ -428,7 +445,8 @@ Because of the Mediterranean climate, San Francisco is very dry in Sep, thus, pr
 
 ### 3.1 Time Process of Depandent Variable
 
-```{r fig.height=3, fig.width=10}
+
+```r
 parking.time.panel.sum%>%
   filter(interval60>= "2021-09-01 00:00:00" & interval60 <= "2021-09-30 23:59:59")%>%
   group_by(interval60, status)%>%
@@ -442,6 +460,8 @@ parking.time.panel.sum%>%
   plotTheme() + theme(panel.grid.major = element_blank())
 ```
 
+<img src="final_files/figure-html/unnamed-chunk-13-1.png" style="display: block; margin: auto;" />
+
 Aggregated dependent variable-total parking time shows obvious periodic characteristics. It is conceivable that time lag will become very good predictors.
 
 In the unit of one week, the distribution of total parking time in each week is have the same trends. Due to San Francisco’s free parking policy on Sundays, the total parking time on Sundays is significantly less, and there are more parking from Monday to Friday with a slight increase trend.
@@ -451,7 +471,8 @@ In the unit of one day, the total parking time always peaks at a certain moment 
 The whole dataset is divided into Train-set(3-week) and Test-set(2-week).
 
 
-```{r}
+
+```r
 parking.time.panel %>% 
   ggplot(aes(parking_time_in_60m))+
     geom_histogram(bins=30, fill = p5[3], color="white") +
@@ -460,9 +481,12 @@ parking.time.panel %>%
     labs(title="Histogram of Parking Time in Seconds",
          subtitle = 'By Meter, SF, 2020.9', y='log(count)')
 ```
+
+<img src="final_files/figure-html/unnamed-chunk-14-1.png" style="display: block; margin: auto;" />
 In the time-panel with one-hour intervals, the parking time presents such a trend: a very large number of 0 (no parking), a large number of 3600 (a full hour of parking) and a small number of others (less than 3600s of paking in the hour). This figure shows the reason why it is a bad idea to predict on a single meter instead on a whole street segment. Such an irregular distribution is difficult to transform into effective information in a model.
 
-```{r}
+
+```r
 park.engineer %>% 
   select(parking_time_in_60m) %>% 
   ggplot(aes(parking_time_in_60m))+
@@ -472,10 +496,13 @@ park.engineer %>%
          subtitle = 'Aggregated By Street Segments, SF, 2020.9')
 ```
 
+<img src="final_files/figure-html/unnamed-chunk-15-1.png" style="display: block; margin: auto;" />
+
 Aggregating dependent variable by street segments, this figure shows that there are plenty of empty streets (or not recorded parking) in SF. And there are few streets with parking time more than 50,000 seconds in an hour. The distribution of dependent variable is pretty similar to Poisson Distribution, thus, a Poisson Regression is included except for OLS.
 
 
-```{r}
+
+```r
 int.ampeak <- interval(as_hms("07:00:00"),as_hms("10:00:00"))
 int.pmpeak <- interval(as_hms("15:00:00"),as_hms("18:00:00"))
 int.midday <- interval(as_hms("10:00:00"),as_hms("15:00:00"))
@@ -502,13 +529,15 @@ parking.time.panel.sum %>%
        y="Frequency")+
   facet_wrap(~period)+
   plotTheme()
-
 ```
+
+<img src="final_files/figure-html/unnamed-chunk-16-1.png" style="display: block; margin: auto;" />
 
 As mentioned before, in `mid_day`, San Francisco recorded longer parking times, followed by `am` and `pm.` In the early morning and late night, almost no parking was recorded.
 
 
-```{r fig.height=6, fig.width=12}
+
+```r
 plotData.lag <-
   as.data.frame(park.engineer)%>%
   dplyr::select(starts_with("lag"), parking_time_in_60m) %>%
@@ -531,6 +560,8 @@ ggplot(aes(Value, parking_time_in_60m)) +
   plotTheme()
 ```
 
+<img src="final_files/figure-html/unnamed-chunk-17-1.png" style="display: block; margin: auto;" />
+
 
 Next, the time lag features are tested for correlation with dependent variable. 
 
@@ -543,7 +574,8 @@ Due to too small correlation, lag12hours will be removed from predictors. In add
 
 ### 3.2 Spatial Process of Depandent Variable
 
-```{r fig.height=5, fig.width=8, eval=F}
+
+```r
 park.engineer <-park.engineer%>%
   mutate(time_period = case_when(ymd_hms(paste0('1970-01-01',str_sub(interval60, 12)))%within% int.ampeak ~ "AM",
                             ymd_hms(paste0('1970-01-01',str_sub(interval60, 12)))%within% int.pmpeak ~ "PM",
@@ -583,7 +615,8 @@ anim_save("./pic/ani.gif", height = 800, width =800, animation, duration=4, rend
 The figure above is the temporal/spatial process of average parking time within a day. It can be seen that there is clustering in parking time around noon, and it is near the Union square in downtown San Francisco. Therefore, predictors related to spatial processes are necessary.
 
 
-```{r fig.height=8, fig.width=16}
+
+```r
 park.engineer.map = park.engineer %>%
   group_by(street.id, dotw) %>%
   summarize(mean_time = mean(parking_time_in_60m))%>%
@@ -607,9 +640,12 @@ ggplot()+
   mapTheme()
 ```
 
+<img src="final_files/figure-html/unnamed-chunk-19-1.png" style="display: block; margin: auto;" />
+
 Within a week, the change in parking time is limited. The most notable thing is the comparison between Sunday and other times. From Monday to Saturday, similar to the previous figure, there are longer parking times in the area near the city center.
 
-```{r fig.height=6, fig.width=16}
+
+```r
 parking_seg_census%>%
   pivot_longer(cols=ends_with(".nn"),names_to="name1",values_to="value_raw")%>%
   mutate(value_logged = log(value_raw))%>%
@@ -624,9 +660,12 @@ parking_seg_census%>%
          subtitle = 'San Francisco, 2021.9', x="")
 ```
 
+<img src="final_files/figure-html/unnamed-chunk-20-1.png" style="display: block; margin: auto;" />
+
 Nearest neighbor variables are introduced to explain the spatial process. Amenities like transit station, public parks are downloaded, and the distance to the nearest neighbors are collected to be the predictors. And they are log transformed to avoid the negative effect of skewness.
 
-```{r fig.height=8, fig.width=16}
+
+```r
 mapdata = parking_seg_census%>%
   select(-spots_num_census,-street_seg_ctrln_id) %>% 
   mutate_at(ends_with(".nn")%>%vars()%>%all_of(),log) %>% 
@@ -644,11 +683,14 @@ ggplot(mapdata)+
   mapTheme()
 ```
 
+<img src="final_files/figure-html/unnamed-chunk-21-1.png" style="display: block; margin: auto;" />
+
 
 
 Spatial Correlation
 
-```{r fig.height=6, fig.width=12}
+
+```r
 plotData.lag <-
   as.data.frame(park.engineer)%>%
   dplyr::select(ends_with("nn"), parking_time_in_60m) %>%
@@ -669,6 +711,8 @@ ggplot(aes(Value, parking_time_in_60m)) +
   labs(title = "") +
   plotTheme()
 ```
+
+<img src="final_files/figure-html/unnamed-chunk-22-1.png" style="display: block; margin: auto;" />
 
 Despite the preprocessing, these spatial variables have limited correlation with the dependent variable. One possible reason is that the distribution of the dependent variable is not a normal distribution, and a large number of zero values affect the linear relationship between the spatial variables and the dependent variable.
 
@@ -714,7 +758,8 @@ Following is a detailed description of independent variables:
 `Wind_Speed`: the wind speed of the hour when parking happened
 
 
-```{r}
+
+```r
 park.Train = filter(park.engineer, week <= 37) # 35~37
 park.Test = filter(park.engineer, week > 37 & week < 40) # 38~39
 
@@ -758,7 +803,8 @@ Because the distribution of our dependent variable is more similar to Poisson di
 The overall quality of the Space Time Lag Weather Model is satisfying. The adjusted R-squared is 0.85, which means that 85% of the variance in the dependent variable, parking time, is explained by the model. And as is mentioned before, these six time lag variables are significent in the model.
 
 
-```{r}
+
+```r
 model_pred <- function(dat, fit){
    pred <- predict(fit, newdata = dat)}
 
@@ -797,13 +843,15 @@ week_predictions %>%
     scale_fill_manual(values = plasma(8)[2:6]) +
     labs(title = "Mean Absolute Errors by model specification and week",x="week") +
   plotTheme()
-
 ```
+
+<img src="final_files/figure-html/unnamed-chunk-24-1.png" style="display: block; margin: auto;" />
 
 Comparing all five models, in terms of accuracy, the last two models with time lag variables performs better than any other models, having a MAE of less than 2000 seconds (33minutes) per street. The Poisson model is not as good as expected. And the models with space variables barely make a difference.
 
 
-```{r}
+
+```r
 week_predictions %>% 
   mutate(interval60 = map(data, pull, interval60)) %>%
   dplyr::select(interval60, Observed, Prediction, Regression) %>%
@@ -826,11 +874,14 @@ week_predictions %>%
   plotTheme()
 ```
 
+<img src="final_files/figure-html/unnamed-chunk-25-1.png" style="display: block; margin: auto;" />
+
 Again, the models with time variables perfectly predicts the parking time. They are able to predict every peak and trough in the observations. In terms of generalizability, it may be worrying because there is some overfitting here, but in our use case, not generalizability but accuracy is what we care about.
 
 ## 5. Cross Validation
 
-```{r cache.lazy = FALSE}
+
+```r
 # cross-validation
 fitControl <- trainControl(method = "cv", number = 50,savePredictions=T)
 set.seed(1)
@@ -843,10 +894,10 @@ reg.cv = train(formula4, data = park.engineer,
 # 
 # reg.summary <- mutate(reg.cv, Error = Prediction - parking_time_in_60m,
 #                       Regression = "random k-fold cross validation on the 5 week panel")
-
 ```
 
-```{r cache.lazy = FALSE}
+
+```r
 reg.summary <-reg.cv$pred%>%
   select(foldNum = Resample,pred,obs)%>%
   mutate(AE = abs(pred-obs),
@@ -865,11 +916,14 @@ reg.summary %>%
   plotTheme()
 ```
 
+<img src="final_files/figure-html/unnamed-chunk-27-1.png" style="display: block; margin: auto;" />
+
 The cross-validation gets MAE of about 1940 seconds (32min) per street, which means the error is only half an hour of all meters per street segment. So the generalizability of the model is actually not bad.
 
 ## 6. Additional Visualizations
 
-```{r}
+
+```r
 fee = st_read("./data/rate.geojson")%>%st_transform(crs)
 fee.geom = fee%>%
   group_by(old)%>%
@@ -907,7 +961,6 @@ fee.results = fee.geom%>%
   drop_na()%>% 
   mutate(rate_change = PROPOSED_RATE - LAST_RATE,
          street.id = as.character(street.id))
-
 ```
 
 We also want to see whether the prediction of this model can actually decide the parking rate changes correctly. So we used parking rate change data from SFMTA. However, the dataset does not contain geometry columns, so we have to geocoded it, and may introduce errors.
@@ -916,7 +969,8 @@ According to SFMTA, they raises the rate by \$0.25 on blocks where average occup
 
 Data Source: https://www.sfmta.com/reports/2021-parking-meter-rate-adjustments
 
-```{r}
+
+```r
 cv.pred = park.engineer %>%
   mutate(pred =  predict(reg.cv,newdata = .,na.action = na.pass)) %>% 
   drop_na(pred) %>% 
@@ -958,6 +1012,8 @@ fee.compare  %>%
        subtitle = "Compared to the actual proposed pricing, SF, 2021.9",
        x = "Actual proposed pricing vs. Predicted pricing")
 ```
+
+<img src="final_files/figure-html/unnamed-chunk-29-1.png" style="display: block; margin: auto;" />
 
 As is shown in the plot, except for the NA (meter cannot be found in the dataset), the results of the prediction is great... TOO great. It turns out that almost all the streets have an occupancy less than 60%. It is either because parking lots are more than enough in SF, or the parking fee is too high compared to offstreet parking. Thus, all the meters need a depreciation, but few of them can actually do that because of the price reduction standard - "Minimum rate rule" of \$0.25 or "Meter payment realization rate threshold applied".
 
