@@ -43,6 +43,7 @@ data/meters.geojson
 
 *.ai
 *.png
+!final_files/figure-html/*.png
 *.RData
 data/parking_spot_panel.csv
 data/processed_meter_trans.csv
