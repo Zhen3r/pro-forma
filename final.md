@@ -119,13 +119,13 @@ The whole dataset is divided into Train-set(3-week) and Test-set(2-week).
 
 
 <img src="final_files/figure-html/unnamed-chunk-14-1.png" style="display: block; margin: auto;" />
-In the time-panel with one-hour intervals, the parking time presents such a trend: a very large number of 0 (no parking), a large number of 3600 (a full hour of parking) and a small number of others (less than 3600s of paking in the hour). This figure shows the reason why it is a bad idea to predict on a single meter instead on a whole street segment. Such an irregular distribution is difficult to transform into effective information in a model.
+This time-panel with one-hour intervals plots out the meter-level parking time that  presents such a trend: a very large number of 0 (no parking), a large number of 3600 (a full hour of parking) and a small number of others (less than 3600s of paking in the hour). This figure shows the reason why it is a bad idea to predict on a single meter instead on a whole street segment. Such an irregular distribution is difficult to transform into effective information in a model.
 
 
 
 <img src="final_files/figure-html/unnamed-chunk-15-1.png" style="display: block; margin: auto;" />
 
-Aggregating dependent variable by street segments, this figure shows that there are plenty of empty streets (or not recorded parking) in SF. And there are few streets with parking time more than 50,000 seconds in an hour. The distribution of dependent variable is pretty similar to Poisson Distribution, thus, a Poisson Regression is included except for OLS.
+Aggregating dependent variable by street segments, this figure shows that there are plenty of empty streets (or not recorded parking) in SF. And there are few streets with parking time more than 50,000 seconds in an hour. The distribution of dependent variable is pretty similar to Poisson Distribution, thus, a Poisson Regression is included besides OLS.
 
 <img src="final_files/figure-html/unnamed-chunk-16-1.png" style="display: block; margin: auto;" />
 
@@ -151,19 +151,19 @@ Due to too small correlation, lag12hours will be removed from predictors. In add
 
 ![](./pic/ani.gif)
 
-The figure above is the temporal/spatial process of average parking time within a day. It can be seen that there is clustering in parking time around noon, and it is near the Union square in downtown San Francisco. Therefore, predictors related to spatial processes are necessary.
+The figure above is the temporal/spatial process of monthly average parking time of every hour. We first calculated the average parking time of each street segment in one month for every hour, then mapped them out. It can be seen that there is clustering in parking time around noon, and it is near the Union square in downtown San Francisco. Therefore, predictors related to spatial processes are necessary.
 
 
 
 <img src="final_files/figure-html/unnamed-chunk-19-1.png" style="display: block; margin: auto;" />
 
-Within a week, the change in parking time is limited. The most notable thing is the comparison between Sunday and other times. From Monday to Saturday, similar to the previous figure, there are longer parking times in the area near the city center.
+The changes of parking time related to days in one week is relatively small. The most notable change is the difference between Sunday--when most meters are not running--and other times. From Monday to Saturday, similar to the previous map, street segments with higher parking time cluster in the city center.
 
 
 
 <img src="final_files/figure-html/unnamed-chunk-20-1.png" style="display: block; margin: auto;" />
 
-Nearest neighbor variables are introduced to explain the spatial process. Amenities like transit station, public parks are downloaded, and the distance to the nearest neighbors are collected to be the predictors. And they are log transformed to avoid the negative effect of skewness.
+Nearest neighbor variables are introduced to explain the spatial process. Amenities such as transit station, public parks and restaurants are downloaded, and the distance to the nearest neighbors are calculated to be the predictors. Because the original distribution of nearest neighbor variables is skewed towards right while OSL prefers normal distribution, we log-transformed all nearest neighbor variables through feature engineering. The log-transformed nearest neighborhood variables are mapped out below.
 
 
 
@@ -184,7 +184,7 @@ Nevertheless, we still retain these spatial variables in some models to compare 
 
 ## 4. Modeling 
 
-Following is a detailed description of independent variables:
+Following is a detailed description of independent variables used in our modeling:
 
 `spots_num_census`: the total number of parking spaces on this street segment
 
@@ -225,10 +225,15 @@ Following is a detailed description of independent variables:
 
 We first developed 4 linear regression models to predict the parking demand in SF with different combinations of independent variables as shown below:
 
-Weather_Time Model: Parking spaces counts, Weather, Time
-Space_Time Model: Parking spaces counts, Weather, Time, Distance to amenities
-Lag_Time Model: Parking spaces counts, Weather, Time, Time lags
+Weather_Time Model: Parking spaces counts, Weather, Time    
+
+Space_Time Model: Parking spaces counts, Weather, Time, Distance to amenities    
+
+Lag_Time Model: Parking spaces counts, Weather, Time, Time lags    
+
 Time_Space_Lag_Weather Model: Parking spaces counts, Weather, Time, Distance to amenities, Time lags
+
+
 
 Because the distribution of our dependent variable is more similar to Poisson distribution rather than normal distribution, we also use the variable selection from the Time_Space_Lag_Weather Model to develop a Poisson regression model.
 
@@ -239,7 +244,7 @@ The overall quality of the Space Time Lag Weather Model is satisfying. The adjus
 
 <img src="final_files/figure-html/unnamed-chunk-24-1.png" style="display: block; margin: auto;" />
 
-Comparing all five models, in terms of accuracy, the last two models with time lag variables performs better than any other models, having a MAE of less than 2000 seconds (33minutes) per street. The Poisson model is not as good as expected. And the models with space variables barely make a difference.
+Comparing all five models, in terms of accuracy, the last two OLS models with time lag variables performs better than any other models, having a MAE of less than 2000 seconds (33minutes) per street. The Poisson model is not as good as expected. And the models with space variables barely make a difference.
 
 
 
@@ -251,7 +256,7 @@ Again, the models with time variables perfectly predicts the parking time. They 
 
 <img src="final_files/figure-html/unnamed-chunk-27-1.png" style="display: block; margin: auto;" />
 
-The cross-validation gets MAE of about 1940 seconds (32min) per street, which means the error is only half an hour of all meters per street segment. So the generalizability of the model is actually not bad.
+Above is the cross-validation results from our best Space Time Lag Weather Model. The cross-validation gets MAE of about 1940 seconds (32min) per street, which means the error is only half an hour of all meters per street segment. The distribution of MAE and standard error of MAE is approximately normal with some outliers, so the model has a good generalizability.
 
 ## 6. Additional Visualizations
 
@@ -280,6 +285,7 @@ We have developed a good model that predicts the future parking demand based on 
 
 2. The parking fee dataset is not perfectly available online, thus, we cannot include the parking fee as on of the predictors, which could be a great predictor of parking time.
 
+For future improvement of our model, we will try other modeling approaches besides OLS and Poisson regression to build a model that better fits the distribution of our dependent variable. We will also consider to log transform the dependent variable. Moreover, we will include more independent variables that control the temporal process. For example, with a better computer, we can use 15-minutes interval instead of hourly interval as well as 15-minutes time lag variables that might better capture the changes of parking demand.
 
 ## 8. Codes
 
