@@ -237,7 +237,7 @@ Time_Space_Lag_Weather Model: Parking spaces counts, Weather, Time, Distance to 
 
 Because the distribution of our dependent variable is more similar to Poisson distribution rather than normal distribution, we also use the variable selection from the Time_Space_Lag_Weather Model to develop a Poisson regression model.
 
-![](./pic/2.png)
+![](./pic/4.png)
 
 The overall quality of the Space Time Lag Weather Model is satisfying. The adjusted R-squared is 0.85, which means that 85% of the variance in the dependent variable, parking time, is explained by the model. And as is mentioned before, these six time lag variables are significent in the model.
 
@@ -257,6 +257,11 @@ Again, the models with time variables perfectly predicts the parking time. They 
 <img src="final_files/figure-html/unnamed-chunk-27-1.png" style="display: block; margin: auto;" />
 
 Above is the cross-validation results from our best Space Time Lag Weather Model. The cross-validation gets MAE of about 1940 seconds (32min) per street, which means the error is only half an hour of all meters per street segment. The distribution of MAE and standard error of MAE is approximately normal with some outliers, so the model has a good generalizability.
+
+
+<img src="pic/3.png" style="display: block; margin: auto;" />
+
+The map above is the spatial distribution of MAE. There is not a clear spatial clustering, meaning that if we want to further improve the model, another spatial processes will not be helpful.
 
 ## 6. Additional Visualizations
 
