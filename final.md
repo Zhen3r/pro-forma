@@ -1,17 +1,284 @@
----
-title: "Smart Street - A Better and Cheaper Demand-Responsive Parking System"
-author: "Ran Wang, Zhenzhao Xu"
-output:
-  html_document:
-    code_folding: hide
-    toc: yes
-    toc_float: true
-    keep_md: true
-editor_options: 
-  markdown: 
-    wrap: sentence
-  chunk_output_type: inline
----
+
+# Smart Street - A Better and Cheaper Demand-Responsive Parking System
+### Ran Wang, Zhenzhao Xu
+
+## 1. Introduction
+
+Parking is a well-recognized issue in U.S. cities. Parking is severely underpriced; off-street parking rates seldom if ever take the external costs of parking into account and on-street parking rates hardly reflect the market price that matches demand with supply. The underpriced parking leads to the overuse of goods and encourages more driving that unavoidably result in negative externalities such as congestion and pollution. From a consumer’s perspective, the overuse of underpriced or even free parking resources also causes problems such as the difficulty of finding available parking spaces.
+	
+![](./pic/1.jpg)
+	
+In response to the parking crisis that harms the urban transportation system and deteriorates urban forms, one proposed alternative is demand-responsive on-street parking. Demand-responsive parking sets the parking rates at the market price that matches the demand with supply and always keeps a few spaces vacant. Previous pilot programs have found that demand-responsive parking could lower parking rates, decreased parking search time, decreased daily vehicle miles traveled, and increased city revenue. However, to set the price according to the exact demand and supply at specific time and location, demand-responsive parking requires real-time parking sensors that monitor the occupancy rate of each street segment. **Real-time sensors are expensive to install on all streets as each sensor costs \$300 to \$500.** The high cost of real-time sensors is a strong impediment to the popularization of demand-responsive parking.
+	
+In this project ***Smart Street***, we develop a better and cheaper demand-responsive parking system based on parking demand prediction. Instead of installing real-time parking sensors, **we predict the future parking demand at specific time and location and set the parking rates accordingly**. The use case of Smart Street is to allow public agencies to set and adjust on-street parking rates based on predicted parking demand **without the necessity of installing expensive sensors**. The target user group of Smart Street is any public agency–such as MTA, DOT, and so on–who wishes to use demand-responsive parking. 
+
+Smart Street is a more attractive solution because it significantly **reduces the cost of designing demand-responsive parking programs**; data for predictive modeling are already available without any future need of data collection, and all users need to do is just feed data into our model. Compared to some current alternatives to real-time sensors that adjust parking rates every three months based on previous parking demand, Smart Street predicts future demand instead of assuming that previous demand will continue into the future without any change. Smart Street also provides a model framework for testing correlation between different variables and changes in parking demand to **better design demand-responsive parking policies**. While we train Smart Street based on parking data at San Francisco, we believe our model with good generalizability will be useful for policy makers in other cities. In general, Smart Street will be an optimal approach to demand-responsive parking.
+	
+
+
+## 2. Data
+
+### 2.1 Meters data
+
+
+There are 2 main data sources for parking in San Francisco in Sep 2021. `Meter Transaction` table is used to indicate the parking occupancy, `Parking Meter` table is used to get the geometry of parking meters. However, these two datasets are inconsistent. There are about 10,000 meters in `Parking Meter` that is not in `Meter Transaction`. These meters are inactive because of missing transactions, broken meters, or a terrible location. In this project, they are excluded from the dataset.
+
+Data Source: 
+
+https://data.sfgov.org/Transportation/SFMTA-Parking-Meter-Detailed-Revenue-Transactions/imvp-dq3v
+
+https://data.sfgov.org/Transportation/Parking-Meters/8vzz-qzz9 
+
+
+<img src="final_files/figure-html/unnamed-chunk-4-1.png" style="display: block; margin: auto;" />
+
+
+
+### 2.2 Creating Parking Time Panel
+
+In this project, time-space model is used to predict parking, thus, `parking.time.panel` is created with a time interval of ONE HOUR. Considering the use case - predictive parking rates, shorter time interval is unnecessary.
+
+
+### 2.3 Processing Parking Time Panel
+
+
+
+![](pic/1.png)
+
+The dependent variable of our model is the **parking time at each street segment**. 
+
+First, we downloaded the parking transaction data that has the time length for each transaction at each parking meter in SF in September. We cut the time length into the one-hour time interval of every hour; for example, if one transaction started at 9:10 am and ended at 10:20 am, we divided this transaction into 50 minutes in the 9 am interval and 20 minutes in the 10 am interval. 
+
+We then aggregated the meter-level data to street segment level data according to the street segment ID of each meter; for instance, if one street segment has ten meters and each meter was occupied for 10 minutes from 9 am to 10 am, then this street segment has a parking time of 100 minutes in the 9 am interval and the hourly maximum parking capacity is 10*60=600 minutes for this street segment. We assign each street segment with geometry from the on-street parking census of SF. We use the street-segment-level parking time in the following analysis and modeling.
+
+Python is used to accelerate this process.
+
+### 2.4 Loading Processed Parking Time Panel
+
+### 2.5 Loading Parking Census Data
+
+
+
+For independent variables, we include parking data such as the number of parking spaces on each street segment from DataSF, weather data from riem, amenity data from OpenStreetMap, and other variables that we create through feature engineering. More details of independent variables will be discussed in later sections.
+
+Data Source: 
+
+https://data.sfgov.org/Transportation/On-Street-Parking-Census/9ivs-nf5y
+
+### 2.6 City Amenities Data
+
+
+Data Source: 
+
+https://data.sfgov.org/Transportation/Muni-Stops/i28k-bkz6
+
+https://data.sfgov.org/Transportation/Map-of-Parking-Regulations/qbyz-te2i
+
+https://data.sfgov.org/Culture-and-Recreation/Recreation-and-Parks-Properties/gtr9-ntp6
+
+https://data.sfgov.org/Culture-and-Recreation/Cultural-Districts/5xmc-5bjj
+
+### 2.7 OSM data
+
+
+
+Data Source: 
+
+https://www.openstreetmap.org/
+
+### 2.8 Adding Time Lag + Time Dummy
+
+
+
+To regress on space/time model, time lag from one hour to one week is included as predictors. They will be tested later to see their correlation with dependent variable.
+
+### 2.9 Weather
+
+
+<img src="final_files/figure-html/unnamed-chunk-12-1.png" style="display: block; margin: auto;" />
+
+Because of the Mediterranean climate, San Francisco is very dry in Sep, thus, precipitation can hardly be a predictor, leaving us other weather predictors - wind speed and temperature.
+
+
+## 3. Exploratory Analysis
+
+### 3.1 Time Process of Depandent Variable
+
+
+<img src="final_files/figure-html/unnamed-chunk-13-1.png" style="display: block; margin: auto;" />
+
+Aggregated dependent variable-total parking time shows obvious periodic characteristics. It is conceivable that time lag will become very good predictors.
+
+In the unit of one week, the distribution of total parking time in each week is have the same trends. Due to San Francisco’s free parking policy on Sundays, the total parking time on Sundays is significantly less, and there are more parking from Monday to Friday with a slight increase trend.
+
+In the unit of one day, the total parking time always peaks at a certain moment of the day, and reaches a low point (about 0) in the early morning and late night. Again, this is related to free parking in the evening in San Francisco.
+
+The whole dataset is divided into Train-set(3-week) and Test-set(2-week).
+
+
+
+
+<img src="final_files/figure-html/unnamed-chunk-14-1.png" style="display: block; margin: auto;" />
+In the time-panel with one-hour intervals, the parking time presents such a trend: a very large number of 0 (no parking), a large number of 3600 (a full hour of parking) and a small number of others (less than 3600s of paking in the hour). This figure shows the reason why it is a bad idea to predict on a single meter instead on a whole street segment. Such an irregular distribution is difficult to transform into effective information in a model.
+
+
+
+<img src="final_files/figure-html/unnamed-chunk-15-1.png" style="display: block; margin: auto;" />
+
+Aggregating dependent variable by street segments, this figure shows that there are plenty of empty streets (or not recorded parking) in SF. And there are few streets with parking time more than 50,000 seconds in an hour. The distribution of dependent variable is pretty similar to Poisson Distribution, thus, a Poisson Regression is included except for OLS.
+
+<img src="final_files/figure-html/unnamed-chunk-16-1.png" style="display: block; margin: auto;" />
+
+As mentioned before, in `mid_day`, San Francisco recorded longer parking times, followed by `am` and `pm.` In the early morning and late night, almost no parking was recorded.
+
+
+
+
+<img src="final_files/figure-html/unnamed-chunk-17-1.png" style="display: block; margin: auto;" />
+
+
+Next, the time lag features are tested for correlation with dependent variable. 
+
+It is obvious that most time lag variables have a very high correlation with the dependent variable. `laghour` and `lagweek` are variables that are more related to the dependent variable, and their R^2 are 0.89 and 0.9, respectively. Followed by lag2hour, lag1day, lag3hour, and lag4hour, their R^2 are 0.76, 0.75, 0.62, and 0.48, respectively. The opposite is lag12Hours. Since night parking is not recorded, lag12hour is negatively correlated with the dependent variable.
+
+Due to too small correlation, lag12hours will be removed from predictors. In addition, because of limited size of the data set, Lagweek, which will significantly reduce the size of training set and test set, is also removed.
+
+
+
+
+### 3.2 Spatial Process of Depandent Variable
+
+
+![](./pic/ani.gif)
+
+The figure above is the temporal/spatial process of average parking time within a day. It can be seen that there is clustering in parking time around noon, and it is near the Union square in downtown San Francisco. Therefore, predictors related to spatial processes are necessary.
+
+
+
+<img src="final_files/figure-html/unnamed-chunk-19-1.png" style="display: block; margin: auto;" />
+
+Within a week, the change in parking time is limited. The most notable thing is the comparison between Sunday and other times. From Monday to Saturday, similar to the previous figure, there are longer parking times in the area near the city center.
+
+
+
+<img src="final_files/figure-html/unnamed-chunk-20-1.png" style="display: block; margin: auto;" />
+
+Nearest neighbor variables are introduced to explain the spatial process. Amenities like transit station, public parks are downloaded, and the distance to the nearest neighbors are collected to be the predictors. And they are log transformed to avoid the negative effect of skewness.
+
+
+
+<img src="final_files/figure-html/unnamed-chunk-21-1.png" style="display: block; margin: auto;" />
+
+
+
+Spatial Correlation
+
+
+
+<img src="final_files/figure-html/unnamed-chunk-22-1.png" style="display: block; margin: auto;" />
+
+Despite the preprocessing, these spatial variables have limited correlation with the dependent variable. One possible reason is that the distribution of the dependent variable is not a normal distribution, and a large number of zero values affect the linear relationship between the spatial variables and the dependent variable.
+
+Nevertheless, we still retain these spatial variables in some models to compare with the baseline model.
+
+
+## 4. Modeling 
+
+Following is a detailed description of independent variables:
+
+`spots_num_census`: the total number of parking spaces on this street segment
+
+`lagHour`: the parking time on this street segment one hour ago
+
+`lag2Hours`: the parking time on this street segment two hours ago
+
+`lag3Hours`: the parking time on this street segment three hours ago
+
+`lag4Hours`: the parking time on this street segment four hours ago
+
+`lag1day`: the parking time on this street segment one day ago
+
+`week`: which day the parking happened
+
+`hour`: what hour the parking happened
+
+`transit.nn`: the log of the distance from the street segment to the nearest transit station
+
+`park_public.nn` : the log of the distance from the street segment to the nearest public park
+
+`cultural_district.nn`: the log of the distance from the street segment to the nearest cultural district
+
+`restaurant.nn`: the log of the average distance from the street segment to the nearest three restaurants
+
+`cafe.nn`: the log of the average distance from the street segment to the nearest three cafes
+
+`theatre.nn`: the log of the average distance from the street segment to the nearest three theatres
+
+`clothes.nn`: the log of the average distance from the street segment to the nearest three clothes stores
+
+`Temperature`: the temperature of the hour when parking happened
+
+`Wind_Speed`: the wind speed of the hour when parking happened
+
+
+
+
+We first developed 4 linear regression models to predict the parking demand in SF with different combinations of independent variables as shown below:
+
+Weather_Time Model: Parking spaces counts, Weather, Time
+Space_Time Model: Parking spaces counts, Weather, Time, Distance to amenities
+Lag_Time Model: Parking spaces counts, Weather, Time, Time lags
+Time_Space_Lag_Weather Model: Parking spaces counts, Weather, Time, Distance to amenities, Time lags
+
+Because the distribution of our dependent variable is more similar to Poisson distribution rather than normal distribution, we also use the variable selection from the Time_Space_Lag_Weather Model to develop a Poisson regression model.
+
+![](./pic/2.png)
+
+The overall quality of the Space Time Lag Weather Model is satisfying. The adjusted R-squared is 0.85, which means that 85% of the variance in the dependent variable, parking time, is explained by the model. And as is mentioned before, these six time lag variables are significent in the model.
+
+
+<img src="final_files/figure-html/unnamed-chunk-24-1.png" style="display: block; margin: auto;" />
+
+Comparing all five models, in terms of accuracy, the last two models with time lag variables performs better than any other models, having a MAE of less than 2000 seconds (33minutes) per street. The Poisson model is not as good as expected. And the models with space variables barely make a difference.
+
+
+
+<img src="final_files/figure-html/unnamed-chunk-25-1.png" style="display: block; margin: auto;" />
+
+Again, the models with time variables perfectly predicts the parking time. They are able to predict every peak and trough in the observations. In terms of generalizability, it may be worrying because there is some overfitting here, but in our use case, not generalizability but accuracy is what we care about.
+
+## 5. Cross Validation
+
+<img src="final_files/figure-html/unnamed-chunk-27-1.png" style="display: block; margin: auto;" />
+
+The cross-validation gets MAE of about 1940 seconds (32min) per street, which means the error is only half an hour of all meters per street segment. So the generalizability of the model is actually not bad.
+
+## 6. Additional Visualizations
+
+
+
+We also want to see whether the prediction of this model can actually decide the parking rate changes correctly. So we used parking rate change data from SFMTA. However, the dataset does not contain geometry columns, so we have to geocoded it, and may introduce errors.
+
+According to SFMTA, they raises the rate by \$0.25 on blocks where average occupancy is above 80%, lowers the rate \$0.25 on blocks where average occupancy is below 60%, and does not change the rate on blocks that hit the target occupancy between 60% and 80%. Rates vary by block, by time of day, and weekday or weekend.
+
+Data Source: https://www.sfmta.com/reports/2021-parking-meter-rate-adjustments
+
+
+<img src="final_files/figure-html/unnamed-chunk-29-1.png" style="display: block; margin: auto;" />
+
+As is shown in the plot, except for the NA (meter cannot be found in the dataset), the results of the prediction is great... TOO great. It turns out that almost all the streets have an occupancy less than 60%. It is either because parking lots are more than enough in SF, or the parking fee is too high compared to offstreet parking. Thus, all the meters need a depreciation, but few of them can actually do that because of the price reduction standard - "Minimum rate rule" of \$0.25 or "Meter payment realization rate threshold applied".
+
+## 7. Discussion
+
+### 7.1 Use Case
+
+We have developed a good model that predicts the future parking demand based on history data of parking. Our model can explain 85% of the variation of the independent variable. Our model also has a satisfying good of fitness and a decent generalizability. With the predicted parking demand in the form of parking time, we can calculate the predicted occupancy rate of each street segment without the necessity of installing real-time sensors. We can then set and adjust parking prices that rise whenever the predicted occupancy rate exceeds the threshold of 80%. Our model has a satisfying good of fitness and a decent generalizability. Thus, users can use our model to determine on-street parking rates that fit the policy of demand-responsive parking while saving their budget.
+
+### 7.2 Limitations
+
+1. The assumption of OLS - linear relationship between dependent variable and each of the predictors is violated. There is some non-linear relationship between spatial variables and the dependent variable. A polynomial model or other non-linear model may help to address this problem.
+
+2. The parking fee dataset is not perfectly available online, thus, we cannot include the parking fee as on of the predictors, which could be a great predictor of parking time.
 
 
 ```r
@@ -59,24 +326,6 @@ v = mapview::mapview
 crs = 7131
 ```
 
-## 1. Introduction
-
-Parking is a well-recognized issue in U.S. cities. Parking is severely underpriced; off-street parking rates seldom if ever take the external costs of parking into account and on-street parking rates hardly reflect the market price that matches demand with supply. The underpriced parking leads to the overuse of goods and encourages more driving that unavoidably result in negative externalities such as congestion and pollution. From a consumer’s perspective, the overuse of underpriced or even free parking resources also causes problems such as the difficulty of finding available parking spaces.
-	
-![](./pic/1.jpg)
-	
-In response to the parking crisis that harms the urban transportation system and deteriorates urban forms, one proposed alternative is demand-responsive on-street parking. Demand-responsive parking sets the parking rates at the market price that matches the demand with supply and always keeps a few spaces vacant. Previous pilot programs have found that demand-responsive parking could lower parking rates, decreased parking search time, decreased daily vehicle miles traveled, and increased city revenue. However, to set the price according to the exact demand and supply at specific time and location, demand-responsive parking requires real-time parking sensors that monitor the occupancy rate of each street segment. **Real-time sensors are expensive to install on all streets as each sensor costs \$300 to \$500.** The high cost of real-time sensors is a strong impediment to the popularization of demand-responsive parking.
-	
-In this project ***Smart Street***, we develop a better and cheaper demand-responsive parking system based on parking demand prediction. Instead of installing real-time parking sensors, **we predict the future parking demand at specific time and location and set the parking rates accordingly**. The use case of Smart Street is to allow public agencies to set and adjust on-street parking rates based on predicted parking demand **without the necessity of installing expensive sensors**. The target user group of Smart Street is any public agency–such as MTA, DOT, and so on–who wishes to use demand-responsive parking. 
-
-Smart Street is a more attractive solution because it significantly **reduces the cost of designing demand-responsive parking programs**; data for predictive modeling are already available without any future need of data collection, and all users need to do is just feed data into our model. Compared to some current alternatives to real-time sensors that adjust parking rates every three months based on previous parking demand, Smart Street predicts future demand instead of assuming that previous demand will continue into the future without any change. Smart Street also provides a model framework for testing correlation between different variables and changes in parking demand to **better design demand-responsive parking policies**. While we train Smart Street based on parking data at San Francisco, we believe our model with good generalizability will be useful for policy makers in other cities. In general, Smart Street will be an optimal approach to demand-responsive parking.
-	
-
-
-## 2. Data
-
-### 2.1 Meters data
-
 
 ```r
 meter_trans = read.csv("./data/meter_trans_2021-09.csv")%>%
@@ -100,13 +349,7 @@ meters = st_read("./data/Parking Meters.geojson")%>%
 sf_neighborhood <-st_read("./data/SF Find Neighborhoods.geojson")%>%
   st_transform('EPSG:7131')
 ```
-There are 2 main data sources for parking in San Francisco in Sep 2021. `Meter Transaction` table is used to indicate the parking occupancy, `Parking Meter` table is used to get the geometry of parking meters. However, these two datasets are inconsistent. There are about 10,000 meters in `Parking Meter` that is not in `Meter Transaction`. These meters are inactive because of missing transactions, broken meters, or a terrible location. In this project, they are excluded from the dataset.
 
-Data Source: 
-
-https://data.sfgov.org/Transportation/SFMTA-Parking-Meter-Detailed-Revenue-Transactions/imvp-dq3v
-
-https://data.sfgov.org/Transportation/Parking-Meters/8vzz-qzz9 
 
 
 
@@ -124,13 +367,6 @@ data.frame("meter.inactive"=meter.inactive,
          x="", y ="Count")
 ```
 
-<img src="final_files/figure-html/unnamed-chunk-4-1.png" style="display: block; margin: auto;" />
-
-
-
-### 2.2 Creating Parking Time Panel
-
-In this project, time-space model is used to predict parking, thus, `parking.time.panel` is created with a time interval of ONE HOUR. Considering the use case - predictive parking rates, shorter time interval is unnecessary.
 
 
 ```r
@@ -141,50 +377,6 @@ parking.time.panel =
          index = row_number())
 ```
 
-### 2.3 Processing Parking Time Panel
-
-
-```python
-"""
-The function below is used to union the parking time windows of each meter 
-and split the time windows into its panel.
-
-[Input]    meterTrans: pd.DataFrame
-[Output] parkTimePanel: numpy.array[sympy.Interval[datetime.datetime, datetime.datetime]]
-                        (each array element is a parking interval)
-"""
-
-for rowNumber in range(meterTrans.shape[0]):
-    start_time_rounded = meterTrans.loc[rowNumber, "interval60"]
-    start_time = meterTrans.loc[rowNumber, "session_start_dt"].timestamp()
-    end_time = meterTrans.loc[rowNumber, "session_end_dt"].timestamp()
-    post_id_row = meterTrans.loc[rowNumber, "post_id"]
-
-    while start_time<end_time:
-      # get the last minute of this hour
-      this_end = min(end_time, start_time + 3600 - start_time%3600)
-      this_interval = [start_time, this_end]
-      # find the index of this hour and this meter in the meter panel
-      index = meterPanel.loc[(post_id_row,start_time_rounded),"rownum"]
-      # union the time window
-      u = union(array[index], this_interval)
-      parkTimePanel[index]=u
-      # if parking time > 1hr, continue to the next hour
-      start_time_rounded += onehour
-      start_time = this_end
-```
-
-![](pic/1.png)
-
-The dependent variable of our model is the **parking time at each street segment**. 
-
-First, we downloaded the parking transaction data that has the time length for each transaction at each parking meter in SF in September. We cut the time length into the one-hour time interval of every hour; for example, if one transaction started at 9:10 am and ended at 10:20 am, we divided this transaction into 50 minutes in the 9 am interval and 20 minutes in the 10 am interval. 
-
-We then aggregated the meter-level data to street segment level data according to the street segment ID of each meter; for instance, if one street segment has ten meters and each meter was occupied for 10 minutes from 9 am to 10 am, then this street segment has a parking time of 100 minutes in the 9 am interval and the hourly maximum parking capacity is 10*60=600 minutes for this street segment. We assign each street segment with geometry from the on-street parking census of SF. We use the street-segment-level parking time in the following analysis and modeling.
-
-Python is used to accelerate this process.
-
-### 2.4 Loading Processed Parking Time Panel
 
 
 ```r
@@ -223,8 +415,6 @@ sundays <-
   mutate(sunday = as.POSIXct(sunday))
 ```
 
-### 2.5 Loading Parking Census Data
-
 
 ```r
 parking_census <- read.csv("data/On-Street_Parking_Census.csv")%>%
@@ -244,13 +434,6 @@ parking_seg_census <- parking_seg_census%>%
 #   select(STREET_SEG_CTRLN_ID, CAPACITY)
 ```
 
-For independent variables, we include parking data such as the number of parking spaces on each street segment from DataSF, weather data from riem, amenity data from OpenStreetMap, and other variables that we create through feature engineering. More details of independent variables will be discussed in later sections.
-
-Data Source: 
-
-https://data.sfgov.org/Transportation/On-Street-Parking-Census/9ivs-nf5y
-
-### 2.6 City Amenities Data
 
 
 ```r
@@ -280,18 +463,6 @@ parking_seg_census <-
     cultural_district.nn =
       nn_function(st_c(parking_seg_census), st_c(st_centroid(cultural_district)),1))
 ```
-
-Data Source: 
-
-https://data.sfgov.org/Transportation/Muni-Stops/i28k-bkz6
-
-https://data.sfgov.org/Transportation/Map-of-Parking-Regulations/qbyz-te2i
-
-https://data.sfgov.org/Culture-and-Recreation/Recreation-and-Parks-Properties/gtr9-ntp6
-
-https://data.sfgov.org/Culture-and-Recreation/Cultural-Districts/5xmc-5bjj
-
-### 2.7 OSM data
 
 
 ```r
@@ -372,12 +543,6 @@ park.engineer = parking.time.panel.sum%>%
     by="street_seg_ctrln_id")
 ```
 
-Data Source: 
-
-https://www.openstreetmap.org/
-
-### 2.8 Adding Time Lag + Time Dummy
-
 
 ```r
 park.engineer = park.engineer%>%
@@ -396,11 +561,6 @@ park.engineer = park.engineer%>%
          hour = interval60%>%hour()) %>% 
  ungroup()
 ```
-
-
-To regress on space/time model, time lag from one hour to one week is included as predictors. They will be tested later to see their correlation with dependent variable.
-
-### 2.9 Weather
 
 
 ```r
@@ -429,7 +589,37 @@ grid.arrange(top = "Weather Data - SF - Dec, 2021",
     labs(title="Temperature", x="Hour", y="Temperature") + plotTheme())
 ```
 
-<img src="final_files/figure-html/unnamed-chunk-12-1.png" style="display: block; margin: auto;" />
+
+```python
+"""
+The function below is used to union the parking time windows of each meter 
+and split the time windows into its panel.
+
+[Input]    meterTrans: pd.DataFrame
+[Output] parkTimePanel: numpy.array[sympy.Interval[datetime.datetime, datetime.datetime]]
+                        (each array element is a parking interval)
+"""
+
+for rowNumber in range(meterTrans.shape[0]):
+    start_time_rounded = meterTrans.loc[rowNumber, "interval60"]
+    start_time = meterTrans.loc[rowNumber, "session_start_dt"].timestamp()
+    end_time = meterTrans.loc[rowNumber, "session_end_dt"].timestamp()
+    post_id_row = meterTrans.loc[rowNumber, "post_id"]
+
+    while start_time<end_time:
+      # get the last minute of this hour
+      this_end = min(end_time, start_time + 3600 - start_time%3600)
+      this_interval = [start_time, this_end]
+      # find the index of this hour and this meter in the meter panel
+      index = meterPanel.loc[(post_id_row,start_time_rounded),"rownum"]
+      # union the time window
+      u = union(array[index], this_interval)
+      parkTimePanel[index]=u
+      # if parking time > 1hr, continue to the next hour
+      start_time_rounded += onehour
+      start_time = this_end
+```
+
 
 ```r
 park.engineer = park.engineer%>%
@@ -438,12 +628,6 @@ park.engineer = park.engineer%>%
   drop_na(Temperature) # to remove data on OCT.01
 ```
 
-Because of the Mediterranean climate, San Francisco is very dry in Sep, thus, precipitation can hardly be a predictor, leaving us other weather predictors - wind speed and temperature.
-
-
-## 3. Exploratory Analysis
-
-### 3.1 Time Process of Depandent Variable
 
 
 ```r
@@ -460,17 +644,6 @@ parking.time.panel.sum%>%
   plotTheme() + theme(panel.grid.major = element_blank())
 ```
 
-<img src="final_files/figure-html/unnamed-chunk-13-1.png" style="display: block; margin: auto;" />
-
-Aggregated dependent variable-total parking time shows obvious periodic characteristics. It is conceivable that time lag will become very good predictors.
-
-In the unit of one week, the distribution of total parking time in each week is have the same trends. Due to San Francisco’s free parking policy on Sundays, the total parking time on Sundays is significantly less, and there are more parking from Monday to Friday with a slight increase trend.
-
-In the unit of one day, the total parking time always peaks at a certain moment of the day, and reaches a low point (about 0) in the early morning and late night. Again, this is related to free parking in the evening in San Francisco.
-
-The whole dataset is divided into Train-set(3-week) and Test-set(2-week).
-
-
 
 ```r
 parking.time.panel %>% 
@@ -481,9 +654,6 @@ parking.time.panel %>%
     labs(title="Histogram of Parking Time in Seconds",
          subtitle = 'By Meter, SF, 2020.9', y='log(count)')
 ```
-
-<img src="final_files/figure-html/unnamed-chunk-14-1.png" style="display: block; margin: auto;" />
-In the time-panel with one-hour intervals, the parking time presents such a trend: a very large number of 0 (no parking), a large number of 3600 (a full hour of parking) and a small number of others (less than 3600s of paking in the hour). This figure shows the reason why it is a bad idea to predict on a single meter instead on a whole street segment. Such an irregular distribution is difficult to transform into effective information in a model.
 
 
 ```r
@@ -496,9 +666,6 @@ park.engineer %>%
          subtitle = 'Aggregated By Street Segments, SF, 2020.9')
 ```
 
-<img src="final_files/figure-html/unnamed-chunk-15-1.png" style="display: block; margin: auto;" />
-
-Aggregating dependent variable by street segments, this figure shows that there are plenty of empty streets (or not recorded parking) in SF. And there are few streets with parking time more than 50,000 seconds in an hour. The distribution of dependent variable is pretty similar to Poisson Distribution, thus, a Poisson Regression is included except for OLS.
 
 
 
@@ -531,11 +698,6 @@ parking.time.panel.sum %>%
   plotTheme()
 ```
 
-<img src="final_files/figure-html/unnamed-chunk-16-1.png" style="display: block; margin: auto;" />
-
-As mentioned before, in `mid_day`, San Francisco recorded longer parking times, followed by `am` and `pm.` In the early morning and late night, almost no parking was recorded.
-
-
 
 ```r
 plotData.lag <-
@@ -560,19 +722,7 @@ ggplot(aes(Value, parking_time_in_60m)) +
   plotTheme()
 ```
 
-<img src="final_files/figure-html/unnamed-chunk-17-1.png" style="display: block; margin: auto;" />
 
-
-Next, the time lag features are tested for correlation with dependent variable. 
-
-It is obvious that most time lag variables have a very high correlation with the dependent variable. `laghour` and `lagweek` are variables that are more related to the dependent variable, and their R^2 are 0.89 and 0.9, respectively. Followed by lag2hour, lag1day, lag3hour, and lag4hour, their R^2 are 0.76, 0.75, 0.62, and 0.48, respectively. The opposite is lag12Hours. Since night parking is not recorded, lag12hour is negatively correlated with the dependent variable.
-
-Due to too small correlation, lag12hours will be removed from predictors. In addition, because of limited size of the data set, Lagweek, which will significantly reduce the size of training set and test set, is also removed.
-
-
-
-
-### 3.2 Spatial Process of Depandent Variable
 
 
 ```r
@@ -610,9 +760,6 @@ animation =
 # animate(animation, duration=20, renderer = gifski_renderer())
 anim_save("./pic/ani.gif", height = 800, width =800, animation, duration=4, renderer = gifski_renderer())
 ```
-![](./pic/ani.gif)
-
-The figure above is the temporal/spatial process of average parking time within a day. It can be seen that there is clustering in parking time around noon, and it is near the Union square in downtown San Francisco. Therefore, predictors related to spatial processes are necessary.
 
 
 
@@ -640,10 +787,6 @@ ggplot()+
   mapTheme()
 ```
 
-<img src="final_files/figure-html/unnamed-chunk-19-1.png" style="display: block; margin: auto;" />
-
-Within a week, the change in parking time is limited. The most notable thing is the comparison between Sunday and other times. From Monday to Saturday, similar to the previous figure, there are longer parking times in the area near the city center.
-
 
 ```r
 parking_seg_census%>%
@@ -659,10 +802,6 @@ parking_seg_census%>%
     labs(title='Distribution of Nearest Neighbor Variables',
          subtitle = 'San Francisco, 2021.9', x="")
 ```
-
-<img src="final_files/figure-html/unnamed-chunk-20-1.png" style="display: block; margin: auto;" />
-
-Nearest neighbor variables are introduced to explain the spatial process. Amenities like transit station, public parks are downloaded, and the distance to the nearest neighbors are collected to be the predictors. And they are log transformed to avoid the negative effect of skewness.
 
 
 ```r
@@ -682,12 +821,6 @@ ggplot(mapdata)+
        subtitle = "San Francisco, 2021.9")+
   mapTheme()
 ```
-
-<img src="final_files/figure-html/unnamed-chunk-21-1.png" style="display: block; margin: auto;" />
-
-
-
-Spatial Correlation
 
 
 ```r
@@ -711,51 +844,6 @@ ggplot(aes(Value, parking_time_in_60m)) +
   labs(title = "") +
   plotTheme()
 ```
-
-<img src="final_files/figure-html/unnamed-chunk-22-1.png" style="display: block; margin: auto;" />
-
-Despite the preprocessing, these spatial variables have limited correlation with the dependent variable. One possible reason is that the distribution of the dependent variable is not a normal distribution, and a large number of zero values affect the linear relationship between the spatial variables and the dependent variable.
-
-Nevertheless, we still retain these spatial variables in some models to compare with the baseline model.
-
-
-## 4. Modeling 
-
-Following is a detailed description of independent variables:
-
-`spots_num_census`: the total number of parking spaces on this street segment
-
-`lagHour`: the parking time on this street segment one hour ago
-
-`lag2Hours`: the parking time on this street segment two hours ago
-
-`lag3Hours`: the parking time on this street segment three hours ago
-
-`lag4Hours`: the parking time on this street segment four hours ago
-
-`lag1day`: the parking time on this street segment one day ago
-
-`week`: which day the parking happened
-
-`hour`: what hour the parking happened
-
-`transit.nn`: the log of the distance from the street segment to the nearest transit station
-
-`park_public.nn` : the log of the distance from the street segment to the nearest public park
-
-`cultural_district.nn`: the log of the distance from the street segment to the nearest cultural district
-
-`restaurant.nn`: the log of the average distance from the street segment to the nearest three restaurants
-
-`cafe.nn`: the log of the average distance from the street segment to the nearest three cafes
-
-`theatre.nn`: the log of the average distance from the street segment to the nearest three theatres
-
-`clothes.nn`: the log of the average distance from the street segment to the nearest three clothes stores
-
-`Temperature`: the temperature of the hour when parking happened
-
-`Wind_Speed`: the wind speed of the hour when parking happened
 
 
 
@@ -787,20 +875,6 @@ reg.pos = glm(formula4, data=park.Train,family = "poisson")
 # summary(reg.pos)
 ```
 
-
-
-We first developed 4 linear regression models to predict the parking demand in SF with different combinations of independent variables as shown below:
-
-Weather_Time Model: Parking spaces counts, Weather, Time
-Space_Time Model: Parking spaces counts, Weather, Time, Distance to amenities
-Lag_Time Model: Parking spaces counts, Weather, Time, Time lags
-Time_Space_Lag_Weather Model: Parking spaces counts, Weather, Time, Distance to amenities, Time lags
-
-Because the distribution of our dependent variable is more similar to Poisson distribution rather than normal distribution, we also use the variable selection from the Time_Space_Lag_Weather Model to develop a Poisson regression model.
-
-![](./pic/2.png)
-
-The overall quality of the Space Time Lag Weather Model is satisfying. The adjusted R-squared is 0.85, which means that 85% of the variance in the dependent variable, parking time, is explained by the model. And as is mentioned before, these six time lag variables are significent in the model.
 
 
 
@@ -845,10 +919,6 @@ week_predictions %>%
   plotTheme()
 ```
 
-<img src="final_files/figure-html/unnamed-chunk-24-1.png" style="display: block; margin: auto;" />
-
-Comparing all five models, in terms of accuracy, the last two models with time lag variables performs better than any other models, having a MAE of less than 2000 seconds (33minutes) per street. The Poisson model is not as good as expected. And the models with space variables barely make a difference.
-
 
 
 ```r
@@ -874,11 +944,6 @@ week_predictions %>%
   plotTheme()
 ```
 
-<img src="final_files/figure-html/unnamed-chunk-25-1.png" style="display: block; margin: auto;" />
-
-Again, the models with time variables perfectly predicts the parking time. They are able to predict every peak and trough in the observations. In terms of generalizability, it may be worrying because there is some overfitting here, but in our use case, not generalizability but accuracy is what we care about.
-
-## 5. Cross Validation
 
 
 ```r
@@ -915,12 +980,6 @@ reg.summary %>%
        subtitle = "50-fold cross-validation")+
   plotTheme()
 ```
-
-<img src="final_files/figure-html/unnamed-chunk-27-1.png" style="display: block; margin: auto;" />
-
-The cross-validation gets MAE of about 1940 seconds (32min) per street, which means the error is only half an hour of all meters per street segment. So the generalizability of the model is actually not bad.
-
-## 6. Additional Visualizations
 
 
 ```r
@@ -962,12 +1021,6 @@ fee.results = fee.geom%>%
   mutate(rate_change = PROPOSED_RATE - LAST_RATE,
          street.id = as.character(street.id))
 ```
-
-We also want to see whether the prediction of this model can actually decide the parking rate changes correctly. So we used parking rate change data from SFMTA. However, the dataset does not contain geometry columns, so we have to geocoded it, and may introduce errors.
-
-According to SFMTA, they raises the rate by \$0.25 on blocks where average occupancy is above 80%, lowers the rate \$0.25 on blocks where average occupancy is below 60%, and does not change the rate on blocks that hit the target occupancy between 60% and 80%. Rates vary by block, by time of day, and weekday or weekend.
-
-Data Source: https://www.sfmta.com/reports/2021-parking-meter-rate-adjustments
 
 
 ```r
@@ -1012,20 +1065,4 @@ fee.compare  %>%
        subtitle = "Compared to the actual proposed pricing, SF, 2021.9",
        x = "Actual proposed pricing vs. Predicted pricing")
 ```
-
-<img src="final_files/figure-html/unnamed-chunk-29-1.png" style="display: block; margin: auto;" />
-
-As is shown in the plot, except for the NA (meter cannot be found in the dataset), the results of the prediction is great... TOO great. It turns out that almost all the streets have an occupancy less than 60%. It is either because parking lots are more than enough in SF, or the parking fee is too high compared to offstreet parking. Thus, all the meters need a depreciation, but few of them can actually do that because of the price reduction standard - "Minimum rate rule" of \$0.25 or "Meter payment realization rate threshold applied".
-
-## 7. Discussion
-
-### 7.1 Use Case
-
-We have developed a good model that predicts the future parking demand based on history data of parking. Our model can explain 85% of the variation of the independent variable. Our model also has a satisfying good of fitness and a decent generalizability. With the predicted parking demand in the form of parking time, we can calculate the predicted occupancy rate of each street segment without the necessity of installing real-time sensors. We can then set and adjust parking prices that rise whenever the predicted occupancy rate exceeds the threshold of 80%. Our model has a satisfying good of fitness and a decent generalizability. Thus, users can use our model to determine on-street parking rates that fit the policy of demand-responsive parking while saving their budget.
-
-### 7.2 Limitations
-
-1. The assumption of OLS - linear relationship between dependent variable and each of the predictors is violated. There is some non-linear relationship between spatial variables and the dependent variable. A polynomial model or other non-linear model may help to address this problem.
-
-2. The parking fee dataset is not perfectly available online, thus, we cannot include the parking fee as on of the predictors, which could be a great predictor of parking time.
 
