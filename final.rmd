@@ -58,13 +58,21 @@ crs = 7131
 
 ## 1. Introduction
 
-Motivate the analysis -- "What is the use case; why would someone want to replicate your analysis and why would they use this approach?"
+	Parking is a well-recognized issue in U.S. cities. Parking is severely underpriced; off-street parking rates seldom if ever take the external costs of parking into account and on-street parking rates hardly reflect the market price that matches demand with supply. The underpriced parking leads to the overuse of goods and encourages more driving that unavoidably result in negative externalities such as congestion and pollution. From a consumer’s perspective, the overuse of underpriced or even free parking resources also causes problems such as the difficulty of finding available parking spaces.
+	
+	![](./pic/1.jpg)
+	
+	In response to the parking crisis that harms the urban transportation system and deteriorates urban forms, one proposed alternative is demand-responsive on-street parking. Demand-responsive parking sets the parking rates at the market price that matches the demand with supply and always keeps a few spaces vacant. Previous pilot programs have found that demand-responsive parking could lower parking rates, decreased parking search time, decreased daily vehicle miles traveled, and increased city revenue. However, to set the price according to the exact demand and supply at specific time and location, demand-responsive parking requires real-time parking sensors that monitor the occupancy rate of each street segment. **Real-time sensors are expensive to install on all streets as each sensor costs \$300 to \$500.** The high cost of real-time sensors is a strong impediment to the popularization of demand-responsive parking.
+	
+	In this project ***Smart Street***, we develop a better and cheaper demand-responsive parking system based on parking demand prediction. Instead of installing real-time parking sensors, **we predict the future parking demand at specific time and location and set the parking rates accordingly**. The use case of Smart Street is to allow public agencies to set and adjust on-street parking rates based on predicted parking demand **without the necessity of installing expensive sensors**. The target user group of Smart Street is any public agency–such as MTA, DOT, and so on–who wishes to use demand-responsive parking. 
 
-<https://www.way.com/parking//37.7879938/-122.4074374/Union-Square/>
+Smart Street is a more attractive solution because it significantly **reduces the cost of designing demand-responsive parking programs**; data for predictive modeling are already available without any future need of data collection, and all users need to do is just feed data into our model. Compared to some current alternatives to real-time sensors that adjust parking rates every three months based on previous parking demand, Smart Street predicts future demand instead of assuming that previous demand will continue into the future without any change. Smart Street also provides a model framework for testing correlation between different variables and changes in parking demand to **better design demand-responsive parking policies**. While we train Smart Street based on parking data at San Francisco, we believe our model with good generalizability will be useful for policy makers in other cities. In general, Smart Street will be an optimal approach to demand-responsive parking.
+	
+
 
 ## 2. Data
 
-Meters data
+### 2.1 Meters data
 
 ```{r}
 meter_trans = read.csv("./data/meter_trans_2021-09.csv")%>%
@@ -452,11 +460,8 @@ plotData.lag <-
                                 "lag4Hours","lag12Hours","lag1day"))
 correlation.lag <-
   group_by(plotData.lag, Variable) %>%
-  summarize(correlation = round(cor(Value, parking_time_in_60m, use = "complete.obs"), 2)) #%>%
-#   kable(caption = "Parking Time in One Hour") %>%
-#   kable_styling("striped", full_width = F)
-# 
-# correlation.lag
+  summarize(correlation = round(cor(Value, parking_time_in_60m, use = "complete.obs"), 2))
+
 plotData.lag%>%sample_n(100000)%>%
 ggplot(aes(Value, parking_time_in_60m)) +
   geom_point(size = 0.1) +
@@ -544,20 +549,18 @@ parking_seg_census%>%
   mutate(across(if_log, factor, levels=c("value_raw","value_logged"))) %>%
   ggplot()+
     geom_histogram(aes(name_log,fill=name1),bins=50)+
-    scale_fill_manual(values=inferno(18)[7:13])+
+    scale_fill_manual(values=inferno(18)[7:13],guide=F)+
     facet_wrap(if_log~name1,scales = "free",nrow=2)+
     plotTheme()+
     labs(title='Distribution of Nearest Neighbor Variables',
          subtitle = 'San Francisco, 2021.9', x="")
 ```
 
-```{r}
+```{r fig.height=6, fig.width=12}
 mapdata = parking_seg_census%>%
   select(-spots_num_census,-street_seg_ctrln_id) %>% 
   mutate_at(ends_with(".nn")%>%vars()%>%all_of(),log) %>% 
-  pivot_longer(ends_with(".nn")) %>% 
-  filter(name=="transit.nn")%>%
-  mutate(name=as.factor(1))%>%
+  pivot_longer(ends_with(".nn"),names_to = "variable") %>% 
   st_sf()
 
 ggplot(mapdata)+
@@ -565,21 +568,58 @@ ggplot(mapdata)+
   geom_sf(aes(color=value),
           stroke = .5, shape = 16)+
   viridis::scale_color_viridis(option = "C")+
-  facet_wrap(~name) +
+  facet_wrap(~variable,nrow=2) +
   labs(title="Logged Nearest Neighbor Variables",
        subtitle = "San Francisco, 2021.9")+
   mapTheme()
 ```
 
+Spatial Correlation
 
+```{r fig.height=3, fig.width=6}
+plotData.lag <-
+  as.data.frame(park.engineer)%>%
+  dplyr::select(ends_with("nn"), parking_time_in_60m) %>%
+  gather(Variable, Value, -parking_time_in_60m)
 
-Corr
+correlation.lag <-
+  group_by(plotData.lag, Variable) %>%
+  summarize(correlation = round(cor(Value, parking_time_in_60m, use = "complete.obs"), 2))
 
-```{r}
-
+plotData.lag%>%sample_n(100000)%>%
+ggplot(aes(Value, parking_time_in_60m)) +
+  geom_point(size = 0.1, shape=16, stroke=0.4) +
+  geom_text(data = correlation.lag, 
+            aes(label = paste("r =", round(correlation, 2))),
+            x=-Inf, y=Inf, vjust = 1.5, hjust = -.1,size=5) +
+  geom_smooth(method = "lm", se = FALSE, colour = p5[3]) +
+  facet_wrap(~Variable, nrow = 2, scales = "free") +
+  labs(title = "") +
+  plotTheme()
 ```
 
 ## 4. Describe your modeling approach and show how you arrived at your final model.
+
+	Following is a detailed description of independent variables:
+
+`spots_num_census`: the total number of parking spaces on this street segment
+`lagHour`: the parking time on this street segment one hour ago
+`lag2Hours`: the parking time on this street segment two hours ago
+`lag3Hours`: the parking time on this street segment three hours ago
+`lag4Hours`: the parking time on this street segment four hours ago
+`lag1day`: the parking time on this street segment one day ago
+`week`: which day the parking happened
+`hour`: what hour the parking happened
+`transit.nn`: the log of the distance from the street segment to the nearest transit station
+`park_public.nn` : the log of the distance from the street segment to the nearest public park
+`cultural_district.nn`: the log of the distance from the street segment to the nearest cultural district
+`restaurant.nn`: the log of the average distance from the street segment to the nearest three restaurants
+`cafe.nn`: the log of the average distance from the street segment to the nearest three cafes
+`theatre.nn`: the log of the average distance from the street segment to the nearest three theatres
+`clothes.nn`: the log of the average distance from the street segment to the nearest three clothes stores
+`Temperature`: the temperature of the hour when parking happened
+`Wind_Speed`: the wind speed of the hour when parking happened
+
 
 ```{r}
 park.Train = filter(park.engineer, week <= 37) # 35~37
@@ -598,7 +638,7 @@ reg2 <- lm(formula2, data=park.Train)
 reg3 <- lm(formula3, data=park.Train)
 reg4 <- lm(formula4, data=park.Train)
 
-reg.pos = glm(formula4, data=park.Train,family = "poisson",na.action = na.omit)
+reg.pos = glm(formula4, data=park.Train,family = "poisson")
 # cost=function(x,y) mean(abs(x-y),na.rm=T)
 # reg.pos.cv = boot::cv.glm(park.Train,reg.pos,K=2,cost = cost)
 
@@ -608,11 +648,24 @@ reg.pos = glm(formula4, data=park.Train,family = "poisson",na.action = na.omit)
 # summary(reg4)
 # summary(reg.pos)
 
+predict(reg.pos, newdata = park.engineer)
+
 stargazer(reg1, reg2, reg3, reg4, type ="text", font.size = "small", single.row = TRUE)
 stargazer(reg4, type ="text", font.size = "small", single.row = TRUE)
 
 # jtools::plot_summs(reg.pos)
 ```
+
+	We first developed 4 linear regression models to predict the parking demand in SF with different combinations of independent variables as shown below:
+
+Weather_Time Model: Parking spaces counts, Weather, Time
+Space_Time Model: Parking spaces counts, Weather, Time, Distance to amenities
+Lag_Time Model: Parking spaces counts, Weather, Time, Time lags
+Time_Space_Lag_Weather Model: Parking spaces counts, Weather, Time, Distance to amenities, Time lags
+
+	Because the distribution of our dependent variable is more similar to Poisson distribution rather than normal distribution, we also use the variable selection from the Time_Space_Lag_Weather Model to develop a Poisson regression model.
+
+
 
 ```{r}
 model_pred <- function(dat, fit){
@@ -628,10 +681,11 @@ week_predictions <-
            Space_Time_model = map(.x = data, fit = reg2, .f = model_pred),
            Lag_Time_model = map(.x = data, fit = reg3, .f = model_pred),
            Time_Space_Lag_Weather_model = map(.x = data, fit = reg4, .f = model_pred),
-           Poission_model = map(.x = data, fit = reg.pos, .f = model_pred))
+           Poisson_model = map(.x = data, fit = reg.pos, .f = model_pred))
 
 mean.na = function(x) {mean(x,na.rm=T)}
 sd.na = function(x) {sd(x,na.rm=T)}
+week_predictions
 
 week_predictions <- week_predictions %>%  
     gather(Regression, Prediction, -data, -week) %>% 
@@ -644,7 +698,7 @@ week_predictions %>%
   dplyr::select(week, Regression, MAE) %>%
   gather(Variable, MAE, -Regression, -week) %>%
   mutate(
-    across(Regression,factor,levels=c("Weather_Time_model","Space_Time_model","Poission_model",
+    across(Regression,factor,levels=c("Weather_Time_model","Space_Time_model","Poisson_model",
                                     "Lag_Time_model","Time_Space_Lag_Weather_model"))
   )%>%
   ggplot(aes(week%>%as.factor(), MAE)) + 
@@ -655,11 +709,37 @@ week_predictions %>%
 
 ```
 
+```{r}
+week_predictions %>% 
+  mutate(interval60 = map(data, pull, interval60)) %>%
+  dplyr::select(interval60, Observed, Prediction, Regression) %>%
+  unnest() %>%
+  gather(Variable, Value, -Regression, -interval60) %>%
+  group_by(Regression, Variable, interval60) %>%
+  summarize(Value = mean(Value,na.rm=T)) %>%
+  ungroup%>%
+  mutate(
+    across(Regression,factor,levels=c("Weather_Time_model","Space_Time_model","Poisson_model",
+                                      "Lag_Time_model","Time_Space_Lag_Weather_model"))
+  )%>%
+  filter(Regression!="Poisson_model") %>% 
+  ggplot(aes(interval60, Value, colour=Variable)) + 
+  geom_line(size = .8) + 
+  facet_wrap(~Regression, ncol=1) +
+  scale_colour_manual(values = p2) +
+  labs(title = "Mean Predicted/Observed Parking Time by hourly interval", 
+       x = "Hour", y= "Parking Time") +
+  plotTheme()
+```
+
+
+
+
 ## 5. Validate your model with cross-validation and describe how your predictions are useful (accuracy vs. generalizability).
 
 ```{r}
 # cross-validation
-fitControl <- caret::trainControl(method = "cv", number = 2,savePredictions=T)
+fitControl <- caret::trainControl(method = "cv", number = 20,savePredictions=T)
 set.seed(1)
 reg.cv = caret::train(formula4, data = park.engineer, 
      method = "lm", trControl = fitControl, na.action = na.pass)
@@ -685,21 +765,21 @@ reg.summary <- mutate(reg.cv, Error = Prediction - parking_time_in_60m,
 ```
 
 ```{r fig.height=4, fig.width=6}
-# week_predictions %>% 
+# week_predictions %>%
 #   mutate(interval60 = map(data, pull, interval60)) %>%
 #   dplyr::select(interval60, Observed, Prediction, Regression) %>%
 #   unnest() %>%
 #   gather(Variable, Value, -Regression, -interval60) %>%
 #     group_by(Regression, Variable, interval60) %>%
 #     summarize(Value = mean(Value,na.rm=T)) %>%
-#     mutate(across(Regression, factor, 
+#     mutate(across(Regression, factor,
 #                   levels=c("Weather_Time_model","Space_Time_model",
 #                            "Lag_Time_model","Time_Space_Lag_Weather_model"))) %>%
-#     ggplot(aes(interval60, Value, colour=Variable)) + 
-#       geom_line(size = .8) + 
+#     ggplot(aes(interval60, Value, colour=Variable)) +
+#       geom_line(size = .8) +
 #       facet_wrap(~Regression, ncol=1) +
 #       scale_colour_manual(values = p2) +
-#       labs(title = "Mean Predicted/Observed bike share by hourly interval", 
+#       labs(title = "Mean Predicted/Observed bike share by hourly interval",
 #            x = "Hour", y= "Bikeshare Trips") +
 #       plotTheme()
 ```
@@ -766,8 +846,6 @@ reg.summary %>%
   labs(title="Distribution of MAE",
        subtitle = "50-fold cross-validation")+
   plotTheme()
-  
-
 ```
 
 adding Parking fee
@@ -801,19 +879,76 @@ fee.geom$street.id.x%>%unique()%>%length()
 fee.geom%>%nrow()
 fee.results = fee.geom%>%
   st_drop_geometry() %>% 
-  group_by(street.id.x) %>% 
+  group_by(street.id) %>% 
   summarise(old=first(old)) %>% 
   right_join(fee,by="old")%>% 
   select(
-    -streets, -old, -STREET_NAME, -new,
-    street.id = street.id.x
-  )
+    -streets, -old, -STREET_NAME, -new
+  ) %>% 
+  drop_na()%>% 
+  mutate(rate_change = PROPOSED_RATE - LAST_RATE,
+         street.id = as.character(street.id))
 
-fee.results 
+fee.results$rate_change %>% summary()
 ```
+
+
+
+```{r}
+cv.pred = park.engineer %>%
+  mutate(pred =  predict(reg.cv,newdata = .,na.action = na.pass)) %>% 
+  drop_na(pred) %>% 
+  mutate(time_band = case_when(hour %in% 0:11 ~ "Open-12pm",
+                                hour %in% 12:14 ~ "12pm-3pm",
+                                hour %in% 15:17 ~ "3pm-6pm",
+                                hour %in% 18:24 ~ "6pm-Close"),
+         time_band_length = case_when(hour %in% 0:11 ~ 12,
+                                hour %in% 12:14 ~ 3,
+                                hour %in% 15:17 ~ 3,
+                                hour %in% 18:24 ~ 6),
+         pred = ifelse(pred<0,0,pred),
+         weekday =ifelse(dotw%in%c("Sat","Sun"),"Weekend","Weekday")  ,
+         spots_num_census = ifelse(spots_num_census==0,1,spots_num_census))
+
+fee.pred = cv.pred %>% 
+  group_by(street.id, weekday, time_band, time_band_length) %>% 
+  summarize(mean_occupation = mean(pred)/ spots_num_census/3600/time_band_length) %>% 
+  group_by(street.id, weekday, time_band) %>% 
+  summarize(pred_occupation = mean(mean_occupation)) %>% 
+  mutate(pred_occupation = ifelse(pred_occupation>1,1,pred_occupation),
+         pred_rate_change = case_when((pred_occupation>0.8) ~ 0.25,
+                                 (pred_occupation>0.6) ~ 0,
+                                 (pred_occupation>0)~ -0.25))
+  
+
+fee.pred %>% summary()
+fee.compare = fee.results %>% 
+  select(street.id, weekday=DATE_TYPE, time_band=TIME_BAND, 
+         rate_change, actual.occ = OCCUPANCY_PCT) %>% 
+  left_join(fee.pred) %>% 
+  mutate(is.same = ifelse(rate_change==pred_rate_change,"same","different"))
+
+fee.compare  %>% 
+  ggplot(aes(is.same))+
+  geom_histogram(stat="count")+
+  plotTheme()+
+  labs(title="Results of Predictive Pricing Policy",
+       subtitle = "Compared to the actual proposed pricing, SF, 2021.9")
+```
+
+SFMTA raises the rate by \$0.25 on blocks where average occupancy is above 80%, lowers the rate \$0.25 on blocks where average occupancy is below 60%, and does not change the rate on blocks that hit the target occupancy between 60% and 80%. Rates may vary by block, by time of day, and weekday or weekend.
+
+这里的问题出在：SF的停车费估计太贵了，几乎没有达到80%的街道；而它们的降价规则又过于严苛（估计是故意的），导致停车费降不下来。
+
 
 ## 7. Discussion
 
-### 7.1 Talk about how your analysis meets the use case you set out to address.
+### 7.1 Use case
 
-### 7.2 What could you do to make the analysis better?
+	We have developed a good model that predicts the future parking demand based on history data of parking. Our model can explain 85% of the variation of the independent variable. Our model also has a satisfying good of fitness and a decent generalizability. With the predicted parking demand in the form of parking time, we can calculate the predicted occupancy rate of each street segment without the necessity of installing real-time sensors. We can then set and adjust parking prices that rise whenever the predicted occupancy rate exceeds the threshold of 80%. Our model has a satisfying good of fitness and a decent generalizability. Thus, users can use our model to determine on-street parking rates that fit the policy of demand-responsive parking while saving their budget.
+
+### 7.2 What could we do to make the analysis better?
+
+
+
+
