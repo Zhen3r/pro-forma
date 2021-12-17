@@ -409,14 +409,14 @@ week_predictions %>%
   summarize(Value = mean(Value,na.rm=T)) %>%
   ungroup%>%
   mutate(
-    across(Regression,factor,levels=c("Weather_Time_model","Space_Time_model",
+    across(Regression,factor,levels=c("Weather_Time_model","Space_Time_model","Poisson_model",
                                       "Lag_Time_model","Time_Space_Lag_Weather_model"))
   )%>%
   ggplot(aes(interval60, Value, colour=Variable)) + 
   geom_line(size = .8) + 
   facet_wrap(~Regression, ncol=1) +
   scale_colour_manual(values = p2) +
-  labs(title = "Mean Predicted/Observed AParking Time by hourly interval", 
+  labs(title = "Mean Predicted/Observed Parking Time by hourly interval", 
        x = "Hour", y= "Parking Time") +
   plotTheme()
 
@@ -434,3 +434,25 @@ error.byWeek <-
           fill = "transparent", alpha=0.6, size=0.2)+
   geom_sf(data = sf_neighborhood)+
   facet_grid(~week)
+
+week_predictions %>%
+  dplyr::select(week, Regression, MAE) %>%
+  gather(Variable, MAE, -Regression, -week) %>%
+  mutate(
+    across(Regression,factor,levels=c("Weather_Time_model","Space_Time_model","Poisson_model",
+                                      "Lag_Time_model","Time_Space_Lag_Weather_model"))
+  )%>%
+  ggplot(aes(week%>%as.factor(), MAE)) + 
+  geom_bar(aes(fill = Regression), position = "dodge", stat="identity") +
+  scale_fill_manual(values = plasma(8)[2:6]) +
+  labs(title = "Mean Absolute Errors by model specification and week",x="week") +
+  plotTheme()
+
+reg.summary %>%
+  pivot_longer(-foldNum)%>%
+  ggplot(aes(value))+
+  geom_histogram(colour="black", fill = p5[4])+
+  facet_wrap(~name,scale='free')+
+  labs(title="Distribution of MAE",
+       subtitle = "50-fold cross-validation")+
+  plotTheme()

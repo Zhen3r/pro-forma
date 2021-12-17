@@ -542,8 +542,7 @@ reg.pos = glm(formula4, data=park.Train,family = "poisson",na.action = na.omit)
 # summary(reg4)
 # summary(reg.pos)
 
-stargazer(reg1, reg2, reg3, reg4, type ="text", font.size = "small", single.row = TRUE)
-stargazer(reg4, type ="text", font.size = "small", single.row = TRUE)
+stargazer(reg1, reg2, reg3, reg4, reg.pos, type ="html", font.size = "small", single.row = TRUE)
 
 # jtools::plot_summs(reg.pos)
 ```
@@ -562,7 +561,7 @@ week_predictions <-
            Space_Time_model = map(.x = data, fit = reg2, .f = model_pred),
            Lag_Time_model = map(.x = data, fit = reg3, .f = model_pred),
            Time_Space_Lag_Weather_model = map(.x = data, fit = reg4, .f = model_pred),
-           Poission_model = map(.x = data, fit = reg.pos, .f = model_pred))
+           Poisson_model = map(.x = data, fit = reg.pos, .f = model_pred))
 
 mean.na = function(x) {mean(x,na.rm=T)}
 sd.na = function(x) {sd(x,na.rm=T)}
@@ -578,7 +577,7 @@ week_predictions %>%
   dplyr::select(week, Regression, MAE) %>%
   gather(Variable, MAE, -Regression, -week) %>%
   mutate(
-    across(Regression,factor,levels=c("Weather_Time_model","Space_Time_model","Poission_model",
+    across(Regression,factor,levels=c("Weather_Time_model","Space_Time_model","Poisson_model",
                                     "Lag_Time_model","Time_Space_Lag_Weather_model"))
   )%>%
   ggplot(aes(week%>%as.factor(), MAE)) + 
